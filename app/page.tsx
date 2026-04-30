@@ -133,13 +133,16 @@ export default function Home() {
           bank_id: d.bank_id,
           bank_name: d.banks?.name || "Diğer",
           name: d.name,
+          description: d.description || "",
           remainingInstallments: remainingInsts.length,
           monthlyPayment: d.monthly_payment,
           totalRemaining: totalRemaining,
           totalDebt: totalPaid + totalRemaining,
           paidAmount: totalPaid,
           remainingInstallmentCount: remainingInsts.length,
-          lastInstallmentDate: lastDate
+          lastInstallmentDate: lastDate,
+          totalInstallments: d.total_installments,
+          nextDueDate: d.next_due_date
         };
       });
       setDebts(mappedDebts);
@@ -174,6 +177,7 @@ export default function Home() {
   const handleAddDebt = async (debt: {
     bank_id: string;
     name: string;
+    description?: string;
     monthly_payment: number;
     total_installments: number;
     next_due_date: string;
@@ -184,8 +188,10 @@ export default function Home() {
       .insert({
         bank_id: debt.bank_id,
         name: debt.name,
+        description: debt.description,
         monthly_payment: debt.monthly_payment,
         total_installments: debt.total_installments,
+        remaining_installments: debt.total_installments,
         next_due_date: debt.next_due_date
       })
       .select()
@@ -220,6 +226,82 @@ export default function Home() {
 
     showToast("Borç başarıyla kaydedildi");
     loadData();
+  };
+
+  const handleUpdateDebt = async (id: string, updates: {
+    bank_id: string;
+    name: string;
+    description?: string;
+    monthly_payment: number;
+    total_installments: number;
+    next_due_date: string;
+  }) => {
+    try {
+      // 1. Delete all existing installments
+      const { error: deleteError } = await supabase
+        .from("installments")
+        .delete()
+        .eq("debt_id", id);
+
+      if (deleteError) throw deleteError;
+
+      // 2. Create NEW installments
+      const installments = [];
+      const startDate = new Date(updates.next_due_date);
+
+      for (let i = 0; i < updates.total_installments; i++) {
+        const dueDate = addMonths(startDate, i);
+        installments.push({
+          debt_id: id,
+          amount: updates.monthly_payment,
+          due_date: format(dueDate, 'yyyy-MM-dd'),
+          status: 'unpaid'
+        });
+      }
+
+      const { error: instError } = await supabase
+        .from("installments")
+        .insert(installments);
+
+      if (instError) throw instError;
+
+      // 3. Update Debt
+      const { error: debtError } = await supabase
+        .from("debts")
+        .update({
+          bank_id: updates.bank_id,
+          name: updates.name,
+          description: updates.description,
+          monthly_payment: updates.monthly_payment,
+          total_installments: updates.total_installments,
+          remaining_installments: updates.total_installments,
+          next_due_date: updates.next_due_date
+        })
+        .eq("id", id);
+
+      if (debtError) throw debtError;
+
+      showToast("Borç başarıyla güncellendi");
+      loadData();
+    } catch (error: any) {
+      showToast("Güncelleme hatası: " + error.message, "error");
+    }
+  };
+
+  const handleDeleteDebt = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from("debts")
+        .delete()
+        .eq("id", id);
+
+      if (error) throw error;
+
+      showToast("Borç silindi");
+      loadData();
+    } catch (error: any) {
+      showToast("Silme hatası: " + error.message, "error");
+    }
   };
 
   const handlePayInstallment = async (id: string, amount: number) => {
@@ -367,7 +449,12 @@ export default function Home() {
 
         {/* Debts Overview */}
         <section>
-          <DebtsOverview debts={debts} onAddDebt={handleAddDebt} />
+          <DebtsOverview 
+            debts={debts} 
+            onAddDebt={handleAddDebt} 
+            onUpdateDebt={handleUpdateDebt}
+            onDeleteDebt={handleDeleteDebt}
+          />
         </section>
 
         {/* Recent Transactions */}

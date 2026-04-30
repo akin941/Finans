@@ -1,8 +1,9 @@
 "use client";
 
-import { MoreVertical, Building2, Plus, ChevronDown, CreditCard, Calendar, Hash } from 'lucide-react';
+import { MoreVertical, Building2, Plus, ChevronDown, CreditCard, Calendar, Hash, Edit2, FileText } from 'lucide-react';
 import { useState } from 'react';
 import { AddDebtModal } from './AddDebtModal';
+import { EditDebtModal } from './EditDebtModal';
 import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
 
@@ -11,6 +12,7 @@ export interface Debt {
   bank_id: string;
   bank_name: string; // From join
   name: string; // Debt description
+  description: string;
   remainingInstallments: number;
   monthlyPayment: number;
   totalRemaining: number;
@@ -18,6 +20,8 @@ export interface Debt {
   paidAmount: number;
   remainingInstallmentCount: number;
   lastInstallmentDate: Date | null;
+  totalInstallments: number;
+  nextDueDate: string;
 }
 
 interface BankGroup {
@@ -28,14 +32,19 @@ interface BankGroup {
 
 export function DebtsOverview({ 
   debts, 
-  onAddDebt 
+  onAddDebt,
+  onUpdateDebt,
+  onDeleteDebt 
 }: { 
   debts: Debt[];
   onAddDebt: (debt: any) => Promise<void>;
+  onUpdateDebt: (id: string, debt: any) => Promise<void>;
+  onDeleteDebt: (id: string) => Promise<void>;
 }) {
   const [expandedBank, setExpandedBank] = useState<string | null>(null);
   const [expandedDebt, setExpandedDebt] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingDebt, setEditingDebt] = useState<Debt | null>(null);
 
   // Group debts by bank
   const groupedDebts = debts.reduce((acc: BankGroup[], debt) => {
@@ -81,6 +90,16 @@ export function DebtsOverview({
         onClose={() => setIsModalOpen(false)} 
         onAdd={onAddDebt} 
       />
+
+      {editingDebt && (
+        <EditDebtModal
+          isOpen={!!editingDebt}
+          onClose={() => setEditingDebt(null)}
+          debt={editingDebt}
+          onUpdate={onUpdateDebt}
+          onDelete={onDeleteDebt}
+        />
+      )}
 
       <div className="space-y-3">
         {groupedDebts.length === 0 ? (
@@ -140,42 +159,69 @@ export function DebtsOverview({
 
                       {/* Expanded Debt Details */}
                       {expandedDebt === debt.id && (
-                        <div className="mt-4 grid grid-cols-2 gap-3 pb-2 animate-in fade-in duration-300">
-                          {/* Row 1 */}
-                          <div className="bg-zinc-800/50 rounded-xl p-3 border border-zinc-700/50">
-                            <div className="flex items-center gap-1.5 mb-1">
-                              <CreditCard className="w-3 h-3 text-zinc-500" />
-                              <div className="text-[10px] text-zinc-500 uppercase font-bold tracking-tight">Toplam Borç</div>
+                        <div className="mt-4 space-y-3 pb-2 animate-in fade-in duration-300">
+                          {/* Description */}
+                          {debt.description && (
+                            <div className="bg-zinc-800/30 rounded-xl p-3 border border-zinc-700/30">
+                              <div className="flex items-center gap-1.5 mb-1.5">
+                                <FileText className="w-3 h-3 text-zinc-500" />
+                                <div className="text-[10px] text-zinc-500 uppercase font-bold tracking-tight">Açıklama</div>
+                              </div>
+                              <div className="text-xs text-zinc-300 leading-relaxed italic">
+                                "{debt.description}"
+                              </div>
                             </div>
-                            <div className="text-sm font-bold text-white">₺{debt.totalDebt.toLocaleString()}</div>
-                          </div>
-                          <div className="bg-zinc-800/50 rounded-xl p-3 border border-zinc-700/50">
-                            <div className="flex items-center gap-1.5 mb-1">
-                              <Plus className="w-3 h-3 text-emerald-500" />
-                              <div className="text-[10px] text-zinc-500 uppercase font-bold tracking-tight">Ödenen</div>
+                          )}
+
+                          <div className="grid grid-cols-2 gap-3">
+                            {/* Row 1 */}
+                            <div className="bg-zinc-800/50 rounded-xl p-3 border border-zinc-700/50">
+                              <div className="flex items-center gap-1.5 mb-1">
+                                <CreditCard className="w-3 h-3 text-zinc-500" />
+                                <div className="text-[10px] text-zinc-500 uppercase font-bold tracking-tight">Toplam Borç</div>
+                              </div>
+                              <div className="text-sm font-bold text-white">₺{debt.totalDebt.toLocaleString()}</div>
                             </div>
-                            <div className="text-sm font-bold text-emerald-500">₺{debt.paidAmount.toLocaleString()}</div>
+                            <div className="bg-zinc-800/50 rounded-xl p-3 border border-zinc-700/50">
+                              <div className="flex items-center gap-1.5 mb-1">
+                                <Plus className="w-3 h-3 text-emerald-500" />
+                                <div className="text-[10px] text-zinc-500 uppercase font-bold tracking-tight">Ödenen</div>
+                              </div>
+                              <div className="text-sm font-bold text-emerald-500">₺{debt.paidAmount.toLocaleString()}</div>
+                            </div>
+
+                            {/* Row 2 */}
+                            <div className="bg-zinc-800/50 rounded-xl p-3 border border-zinc-700/50">
+                              <div className="flex items-center gap-1.5 mb-1">
+                                <Hash className="w-3 h-3 text-zinc-500" />
+                                <div className="text-[10px] text-zinc-500 uppercase font-bold tracking-tight">Kalan Taksit</div>
+                              </div>
+                              <div className="text-sm font-bold text-white">
+                                {debt.remainingInstallmentCount > 0 ? `${debt.remainingInstallmentCount} Taksit` : 'Taksit yok'}
+                              </div>
+                            </div>
+                            <div className="bg-zinc-800/50 rounded-xl p-3 border border-zinc-700/50">
+                              <div className="flex items-center gap-1.5 mb-1">
+                                <Calendar className="w-3 h-3 text-zinc-500" />
+                                <div className="text-[10px] text-zinc-500 uppercase font-bold tracking-tight">Son Taksit</div>
+                              </div>
+                              <div className="text-sm font-bold text-zinc-300">
+                                {debt.lastInstallmentDate ? format(debt.lastInstallmentDate, 'd MMM yyyy', { locale: tr }) : '-'}
+                              </div>
+                            </div>
                           </div>
 
-                          {/* Row 2 */}
-                          <div className="bg-zinc-800/50 rounded-xl p-3 border border-zinc-700/50">
-                            <div className="flex items-center gap-1.5 mb-1">
-                              <Hash className="w-3 h-3 text-zinc-500" />
-                              <div className="text-[10px] text-zinc-500 uppercase font-bold tracking-tight">Kalan Taksit</div>
-                            </div>
-                            <div className="text-sm font-bold text-white">
-                              {debt.remainingInstallmentCount > 0 ? `${debt.remainingInstallmentCount} Taksit` : 'Taksit yok'}
-                            </div>
-                          </div>
-                          <div className="bg-zinc-800/50 rounded-xl p-3 border border-zinc-700/50">
-                            <div className="flex items-center gap-1.5 mb-1">
-                              <Calendar className="w-3 h-3 text-zinc-500" />
-                              <div className="text-[10px] text-zinc-500 uppercase font-bold tracking-tight">Son Taksit</div>
-                            </div>
-                            <div className="text-sm font-bold text-zinc-300">
-                              {debt.lastInstallmentDate ? format(debt.lastInstallmentDate, 'd MMM yyyy', { locale: tr }) : '-'}
-                            </div>
-                          </div>
+                          {/* Edit Button */}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingDebt(debt);
+                            }}
+                            className="w-full flex items-center justify-center gap-2 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-bold rounded-xl border border-zinc-700/50 transition-all active:scale-95"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                            Borcu Düzenle
+                          </button>
                         </div>
                       )}
                     </div>
