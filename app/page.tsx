@@ -44,6 +44,9 @@ export default function Home() {
 
   async function loadData() {
     setLoading(true);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
     try {
       // Fetch Transactions
       const { data: transData } = await supabase
@@ -99,12 +102,15 @@ export default function Home() {
           const debtInstallments = installmentsByDebt[inst.debt_id] || [];
           const installmentIndex = debtInstallments.findIndex(i => i.id === inst.id);
           
+          const paymentDueDate = new Date(inst.due_date);
+          const isOverdue = paymentDueDate < today && inst.status !== 'paid';
+
           return {
             id: inst.id,
             bank: inst.debts?.banks?.name ? `${inst.debts.banks.name} - ${inst.debts.name}` : inst.debts?.name || "Bilinmeyen Borç",
             amount: inst.amount - (inst.paid_amount || 0),
-            dueDate: new Date(inst.due_date),
-            status: inst.status === 'unpaid' ? 'pending' : (inst.status === 'overdue' ? 'overdue' : 'partial'),
+            dueDate: paymentDueDate,
+            status: isOverdue ? 'overdue' : (inst.status === 'partial' ? 'partial' : 'pending'),
             installmentNumber: installmentIndex !== -1 ? installmentIndex + 1 : undefined,
             totalInstallments: inst.debts?.total_installments
           };

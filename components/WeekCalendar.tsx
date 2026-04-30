@@ -35,9 +35,11 @@ export function WeekCalendar({ payments = [] }: { payments?: Payment[] }) {
   const endDate = endOfWeek(monthEnd, { weekStartsOn: 1 });
   const monthDays = eachDayOfInterval({ start: startDate, end: endDate });
 
-  const hasPayment = (day: Date) => {
+  const getDayStatus = (day: Date) => {
     const dayStr = format(day, 'yyyy-MM-dd');
-    return payments.some(p => format(p.dueDate, 'yyyy-MM-dd') === dayStr);
+    const dayPayments = payments.filter(p => format(p.dueDate, 'yyyy-MM-dd') === dayStr);
+    if (dayPayments.length === 0) return null;
+    return dayPayments.some(p => p.status === 'overdue') ? 'overdue' : 'pending';
   };
 
   const nextMonth = () => setCurrentDate(addMonths(currentDate, 1));
@@ -90,7 +92,7 @@ export function WeekCalendar({ payments = [] }: { payments?: Payment[] }) {
           <div className="flex gap-2 w-full overflow-x-auto no-scrollbar pb-2">
             {weekDays.map((day, i) => {
               const isToday = isSameDay(day, today);
-              const dayHasPayment = hasPayment(day);
+              const dayStatus = getDayStatus(day);
 
               return (
                 <div
@@ -105,8 +107,11 @@ export function WeekCalendar({ payments = [] }: { payments?: Payment[] }) {
                   <div className="text-lg font-black mt-1">
                     {format(day, 'd')}
                   </div>
-                  {dayHasPayment && (
-                    <div className={`absolute bottom-2 w-1.5 h-1.5 rounded-full ${isToday ? 'bg-white' : 'bg-orange-500 animate-pulse'}`}></div>
+                  {dayStatus && (
+                    <div className={`absolute bottom-2 w-1.5 h-1.5 rounded-full ${
+                      isToday ? 'bg-white' : 
+                      dayStatus === 'overdue' ? 'bg-red-500 animate-pulse' : 'bg-orange-500 animate-pulse'
+                    }`}></div>
                   )}
                 </div>
               );
@@ -127,7 +132,7 @@ export function WeekCalendar({ payments = [] }: { payments?: Payment[] }) {
               {monthDays.map((day, i) => {
                 const isCurrentMonth = isSameMonth(day, currentDate);
                 const isToday = isTodayFn(day);
-                const dayHasPayment = hasPayment(day);
+                const dayStatus = getDayStatus(day);
 
                 return (
                   <div
@@ -141,8 +146,11 @@ export function WeekCalendar({ payments = [] }: { payments?: Payment[] }) {
                     }`}
                   >
                     <span className="text-sm font-bold">{format(day, 'd')}</span>
-                    {dayHasPayment && (
-                      <div className={`absolute bottom-1.5 w-1 h-1 rounded-full ${isToday ? 'bg-white' : 'bg-orange-500'}`}></div>
+                    {dayStatus && (
+                      <div className={`absolute bottom-1.5 w-1 h-1 rounded-full ${
+                        isToday ? 'bg-white' : 
+                        dayStatus === 'overdue' ? 'bg-red-500' : 'bg-orange-500'
+                      }`}></div>
                     )}
                   </div>
                 );
