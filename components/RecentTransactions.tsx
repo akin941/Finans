@@ -15,6 +15,7 @@ export interface Transaction {
   date: Date;
   description: string;
   category: string;
+  related_installment_id?: string;
 }
 
 export function RecentTransactions({ 
@@ -100,24 +101,24 @@ export function RecentTransactions({
             >
               <button
                 onClick={() => toggleExpand(transaction.id)}
-                className="w-full flex items-center justify-between p-3 hover:bg-zinc-800/30 transition-colors"
+                className="w-full flex items-start justify-between p-3.5 hover:bg-zinc-800/30 transition-colors"
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-start gap-3 min-w-0 flex-1">
                   <div className={`rounded-lg p-2 ${style.bg}`}>
                     <Icon className={`w-4 h-4 ${style.text}`} />
                   </div>
-                  <div className="text-left">
-                    <div className="text-sm text-white">
+                  <div className="flex flex-col text-left min-w-0">
+                    <div className="text-sm font-medium text-white break-words leading-tight">
                       {transaction.description}
                     </div>
-                    <div className="text-xs text-zinc-500 mt-0.5">
+                    <div className="text-[10px] text-zinc-500 mt-1 uppercase font-bold tracking-tight">
                       {format(transaction.date, 'd MMM yyyy', { locale: tr })}
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className={`text-lg font-bold ${style.text}`}>
-                    {transaction.type === 'income' ? '+' : '-'}₺{transaction.amount}
+                <div className="flex items-center gap-2 flex-shrink-0 ml-4 pt-0.5">
+                  <div className={`text-lg font-bold whitespace-nowrap ${style.text}`}>
+                    {transaction.type === 'income' ? `+₺${transaction.amount}` : `-₺${transaction.amount}`}
                   </div>
                   <button
                     onClick={(e) => toggleMenu(transaction.id, e)}
@@ -176,7 +177,7 @@ export function RecentTransactions({
                     <div>
                       <div className="text-xs text-zinc-500">Tutar</div>
                       <div className={`font-semibold ${style.text}`}>
-                        {transaction.type === 'income' ? '+' : '-'}₺{transaction.amount}
+                        {transaction.type === 'income' ? `+₺${transaction.amount}` : `-₺${transaction.amount}`}
                       </div>
                     </div>
                   </div>

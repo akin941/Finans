@@ -60,7 +60,8 @@ export default function Home() {
         amount: Math.abs(t.amount),
         date: new Date(t.created_at),
         description: t.description || (t.type === 'income' ? 'Gelir' : 'Gider'),
-        category: t.category || (t.type === 'income' ? 'Genel' : 'Harcama')
+        category: t.category || (t.type === 'income' ? 'Genel' : 'Harcama'),
+        related_installment_id: t.related_installment_id
       }));
       setTransactions(mappedTransactions);
 
@@ -311,57 +312,127 @@ export default function Home() {
   };
 
   const handlePayInstallment = async (id: string, amount: number) => {
-    const { data: transData, error: balError } = await supabase.from("transactions").select("amount");
-    if (balError) {
-      showToast("Bakiye kontrol edilemedi", "error");
+    // 1. Balance Check
+    if (balance < amount) {
+      showToast("Yetersiz bakiye", "error");
       return;
     }
 
-    const currentBalance = (transData || []).reduce((acc, t) => acc + Number(t.amount), 0);
+    try {
+      // 2. Fetch installment details for description
+      const { data: inst } = await supabase
+        .from('installments')
+        .select(`
+          due_date,
+          debts (
+            name,
+            total_installments,
+            banks (name)
+          )
+        `)
+        .eq('id', id)
+        .single();
 
-    if (currentBalance < amount) {
-      showToast("Yetersiz bakiye. Lütfen önce bakiye ekleyin.", "error");
-      return;
+      // Find installment number for description
+      const debtInstallments = (await supabase
+        .from('installments')
+        .select('id')
+        .eq('debt_id', (await supabase.from('installments').select('debt_id').eq('id', id).single()).data?.debt_id)
+        .order('due_date', { ascending: true })).data || [];
+      
+      const instIndex = debtInstallments.findIndex(i => i.id === id);
+      const instNumber = instIndex !== -1 ? instIndex + 1 : '?';
+      
+      const bankName = inst?.debts?.banks?.name || 'Bilinmeyen Banka';
+      const debtName = inst?.debts?.name || 'Borç';
+      const totalInst = inst?.debts?.total_installments || '?';
+      const detailedDesc = `${bankName} - ${debtName} (${instNumber}/${totalInst} taksit)`;
+
+      // 3. Create Transaction FIRST
+      const { error: transError } = await supabase.from("transactions").insert({
+        type: 'expense',
+        amount: -amount,
+        description: detailedDesc,
+        category: "debt_payment",
+        related_installment_id: id
+      });
+
+      if (transError) {
+        console.error("Transaction insert failed:", transError);
+        showToast("İşlem kaydı oluşturulamadı: " + transError.message, "error");
+        return;
+      }
+
+      // 4. ONLY THEN call pay_installment
+      const { error: rpcError } = await supabase.rpc("pay_installment", {
+        p_installment_id: id,
+        p_amount: amount
+      });
+    
+      if (rpcError) {
+        showToast("Taksit güncellenemedi (İşlem kaydedildi): " + rpcError.message, "error");
+        await loadData();
+        return;
+      }
+
+      showToast("Ödeme başarılı");
+      await loadData();
+      
+    } catch (error: any) {
+      showToast("Bir hata oluştu: " + error.message, "error");
     }
-
-    const { error: rpcError } = await supabase.rpc("pay_installment", {
-      p_installment_id: id,
-      p_amount: amount
-    });
-  
-    if (rpcError) {
-      showToast("Ödeme sırasında hata oluştu: " + rpcError.message, "error");
-      return;
-    }
-
-    const { error: transError } = await supabase.from("transactions").insert({
-      type: 'expense',
-      amount: -amount,
-      description: "Taksit ödemesi",
-      category: "debt_payment"
-    });
-
-    if (transError) {
-      console.error("Transaction record could not be created:", transError.message);
-    }
-  
-    showToast("Ödeme başarılı");
-    loadData();
   };
 
   const handleDeleteTransaction = async (id: string) => {
-    const { error } = await supabase
-      .from("transactions")
-      .delete()
-      .eq("id", id);
+    try {
+      // 1. Get transaction details
+      const transaction = transactions.find(t => t.id === id);
+      if (!transaction) return;
 
-    if (error) {
-      showToast("İşlem silinemedi: " + error.message, "error");
-      return;
+      // 2. Rollback installment if needed
+      if (transaction.related_installment_id) {
+        const { data: inst } = await supabase
+          .from('installments')
+          .select('*')
+          .eq('id', transaction.related_installment_id)
+          .single();
+
+        if (inst) {
+          const newPaidAmount = Math.max(0, (inst.paid_amount || 0) - transaction.amount);
+          let newStatus = 'partial';
+          if (newPaidAmount <= 0) {
+            newStatus = 'unpaid';
+          } else if (newPaidAmount < inst.amount) {
+            newStatus = 'partial';
+          } else {
+            newStatus = 'paid';
+          }
+
+          const { error: instError } = await supabase
+            .from('installments')
+            .update({
+              paid_amount: newPaidAmount,
+              status: newStatus
+            })
+            .eq('id', transaction.related_installment_id);
+
+          if (instError) throw instError;
+        }
+      }
+
+      // 3. Delete transaction
+      const { error } = await supabase
+        .from("transactions")
+        .delete()
+        .eq("id", id);
+
+      if (error) throw error;
+
+      showToast("İşlem geri alındı");
+      loadData();
+    } catch (error: any) {
+      showToast("Geri alma hatası: " + error.message, "error");
     }
-
-    showToast("İşlem geri alındı");
-    loadData();
   };
 
   const handleUpdateTransaction = async (id: string, updates: Partial<Transaction>) => {
