@@ -118,14 +118,18 @@ export default function Home() {
           const paymentDueDate = new Date(inst.due_date);
           const isOverdue = paymentDueDate < today && inst.status !== 'paid';
 
+          const debt = inst.debts?.[0];
+          const bankName = debt?.banks?.[0]?.name || "Bilinmeyen Banka";
+          const debtName = debt?.name || "Borç";
+
           return {
             id: inst.id,
-            bank: inst.debts?.banks?.name ? `${inst.debts.banks.name} - ${inst.debts.name}` : inst.debts?.name || "Bilinmeyen Borç",
+            bank: `${bankName} - ${debtName}`,
             amount: inst.amount - (inst.paid_amount || 0),
             dueDate: paymentDueDate,
             status: isOverdue ? 'overdue' : (inst.status === 'partial' ? 'partial' : 'pending'),
             installmentNumber: installmentIndex !== -1 ? installmentIndex + 1 : undefined,
-            totalInstallments: inst.debts?.total_installments
+            totalInstallments: debt?.total_installments
           };
         });
       setPayments(mappedPayments);
@@ -155,7 +159,7 @@ export default function Home() {
         return {
           id: d.id,
           bank_id: d.bank_id,
-          bank_name: d.banks?.name || "Diğer",
+          bank_name: d.banks?.[0]?.name || "Diğer",
           name: d.name,
           description: d.description || "",
           remainingInstallments: remainingInsts.length,
@@ -361,9 +365,10 @@ export default function Home() {
       const instIndex = debtInstallments.findIndex(i => i.id === id);
       const instNumber = instIndex !== -1 ? instIndex + 1 : '?';
       
-      const bankName = inst?.debts?.banks?.name || 'Bilinmeyen Banka';
-      const debtName = inst?.debts?.name || 'Borç';
-      const totalInst = inst?.debts?.total_installments || '?';
+      const debt = inst?.debts?.[0];
+      const bankName = debt?.banks?.[0]?.name || 'Bilinmeyen Banka';
+      const debtName = debt?.name || 'Borç';
+      const totalInst = debt?.total_installments || '?';
       const detailedDesc = `${bankName} - ${debtName} (${instNumber}/${totalInst} taksit)`;
 
       // 3. Create Transaction FIRST
