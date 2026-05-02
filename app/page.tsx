@@ -92,12 +92,20 @@ export default function Home() {
       const { data: allInstData } = await supabase
         .from("installments")
         .select(`
-          *,
+          id,
+          amount,
+          due_date,
+          status,
+          paid_amount,
+          debt_id,
           debts (
             id,
             name,
             total_installments,
-            banks (name)
+            banks (
+              id,
+              name
+            )
           )
         `)
         .order("due_date", { ascending: true });
@@ -118,8 +126,10 @@ export default function Home() {
           const paymentDueDate = new Date(inst.due_date);
           const isOverdue = paymentDueDate < today && inst.status !== 'paid';
 
-          const debt = inst.debts?.[0];
-          const bankName = debt?.banks?.[0]?.name || "Bilinmeyen Banka";
+          const debt = Array.isArray(inst.debts) ? inst.debts[0] : inst.debts;
+          const bank = Array.isArray(debt?.banks) ? debt?.banks[0] : debt?.banks;
+          
+          const bankName = bank?.name || "Bilinmeyen Banka";
           const debtName = debt?.name || "Borç";
 
           return {
@@ -139,12 +149,14 @@ export default function Home() {
         .reduce((acc, inst) => acc + (inst.amount - (inst.paid_amount || 0)), 0);
       setTotalDebt(totalDebtAmount);
 
-      // Fetch Debts with Banks
       const { data: debtData } = await supabase
         .from("debts")
         .select(`
           *,
-          banks (name)
+          banks (
+            id,
+            name
+          )
         `);
 
       const mappedDebts: Debt[] = (debtData || []).map(d => {
@@ -156,10 +168,12 @@ export default function Home() {
         const totalRemaining = remainingInsts.reduce((acc, i) => acc + Number(i.amount), 0);
         const lastDate = debtInsts.length > 0 ? new Date(Math.max(...debtInsts.map(i => new Date(i.due_date).getTime()))) : null;
 
+        const bank = Array.isArray(d.banks) ? d.banks[0] : d.banks;
+
         return {
           id: d.id,
           bank_id: d.bank_id,
-          bank_name: d.banks?.[0]?.name || "Diğer",
+          bank_name: bank?.name || "Banka Belirtilmemiş",
           name: d.name,
           description: d.description || "",
           remainingInstallments: remainingInsts.length,
