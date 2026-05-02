@@ -6,7 +6,7 @@ import { MoreVertical, CreditCard, ChevronLeft, ChevronRight } from 'lucide-reac
 import { useState } from 'react';
 import { PaymentConfirmModal } from './PaymentConfirmModal';
 
-export type PaymentStatus = 'pending' | 'partial' | 'overdue';
+export type PaymentStatus = 'pending' | 'partial' | 'overdue' | 'completed';
 
 export interface Payment {
   id: string;
@@ -42,7 +42,7 @@ export function UpcomingPayments({
   });
 
   const overduePayments = monthPayments.filter(p => p.status === 'overdue');
-  const regularPayments = monthPayments.filter(p => p.status !== 'overdue');
+  const regularPayments = monthPayments.filter(p => p.status !== 'overdue' && p.status !== 'completed');
 
   const displayedPayments = showAll ? regularPayments : regularPayments.slice(0, 3);
 
@@ -51,6 +51,7 @@ export function UpcomingPayments({
       case 'pending': return 'bg-zinc-800 text-zinc-400';
       case 'partial': return 'bg-orange-500/10 text-orange-400 border border-orange-500/20';
       case 'overdue': return 'bg-red-500/10 text-red-400 border border-red-500/20';
+      case 'completed': return 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
     }
   };
 

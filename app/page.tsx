@@ -684,7 +684,7 @@ export default function Home() {
               </div>
               <div className="text-left">
                 <div className="text-lg font-bold">Yaklaşan Ödemeler</div>
-                <div className="text-xs text-zinc-500">{payments.filter(p => p.status !== 'paid' && p.status !== 'overdue').length} bekleyen taksit</div>
+                <div className="text-xs text-zinc-500">{payments.filter(p => p.status !== 'completed' && p.status !== 'overdue').length} bekleyen taksit</div>
               </div>
             </div>
             <div className="flex items-center gap-3">
