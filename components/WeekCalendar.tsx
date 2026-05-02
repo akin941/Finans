@@ -15,9 +15,11 @@ import {
   isToday as isTodayFn
 } from 'date-fns';
 import { tr } from 'date-fns/locale';
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, List } from 'lucide-react';
 import { Payment } from './UpcomingPayments';
+
+type CalendarState = 'IDLE' | 'TOUCHING' | 'DRAGGING' | 'ANIMATING';
 
 interface DayCardProps {
   day: Date;
@@ -39,14 +41,11 @@ function DayCard({ day, isSelected, isToday, dayStatus, dayTotal, formattedAmoun
 
   return (
     <button
-      onPointerDown={(e) => e.currentTarget.classList.add('scale-95', 'opacity-80')}
-      onPointerUp={(e) => e.currentTarget.classList.remove('scale-95', 'opacity-80')}
-      onPointerLeave={(e) => e.currentTarget.classList.remove('scale-95', 'opacity-80')}
       onClick={(e) => {
         e.stopPropagation();
         onSelect(day);
       }}
-      className={`flex-1 flex flex-col items-center justify-between py-2 rounded-lg transition-all duration-150 border relative min-h-[64px] active:scale-95 ${
+      className={`flex-1 flex flex-col items-center justify-between py-2 rounded-lg transition-all border relative min-h-[64px] active:scale-95 ${
         isSelected
           ? 'bg-zinc-100 text-black border-white shadow-lg'
           : isToday 
@@ -102,204 +101,130 @@ export function WeekCalendar({
   const [isAnimating, setIsAnimating] = useState(false);
   
   const containerRef = useRef<HTMLDivElement>(null);
-  
-  // High-frequency gesture state (non-reactive for performance/reliability)
+  const stateRef = useRef<CalendarState>('IDLE');
   const gestureRef = useRef({
     startX: 0,
     startY: 0,
-    currentX: 0,
-    currentY: 0,
-    isDragging: false,
-    directionLocked: null as 'horizontal' | 'vertical' | null,
-    hasMoved: false,
-    startTime: 0
+    startTime: 0,
+    pointerId: -1,
+    lastClickTime: 0
   });
 
   const today = new Date();
 
-  // Navigation helpers
-  const finishSwipe = useCallback((direction: number) => {
-    setIsAnimating(true);
-    const containerWidth = containerRef.current?.offsetWidth || 300;
-    const targetOffset = direction === 1 ? -containerWidth : containerWidth;
+  const resetGesture = useCallback((e?: React.PointerEvent) => {
+    if (e && gestureRef.current.pointerId !== -1) {
+      try {
+        (e.target as HTMLElement).releasePointerCapture(gestureRef.current.pointerId);
+      } catch (err) {}
+    }
+    stateRef.current = 'IDLE';
+    gestureRef.current.pointerId = -1;
+    gestureRef.current.startX = 0;
+    gestureRef.current.startY = 0;
+    gestureRef.current.startTime = 0;
+    setIsDragging(false);
+  }, []);
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (!e.isPrimary || stateRef.current === 'ANIMATING') return;
     
-    setDragOffset(targetOffset);
+    stateRef.current = 'TOUCHING';
+    gestureRef.current.pointerId = e.pointerId;
+    gestureRef.current.startX = e.clientX;
+    gestureRef.current.startY = e.clientY;
+    gestureRef.current.startTime = Date.now();
     
-    setTimeout(() => {
-      setWeekOffset(prev => prev + direction);
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (e.pointerId !== gestureRef.current.pointerId) return;
+
+    const deltaX = e.clientX - gestureRef.current.startX;
+    const deltaY = e.clientY - gestureRef.current.startY;
+
+    if (stateRef.current === 'TOUCHING') {
+      if (Math.abs(deltaX) > 8 || Math.abs(deltaY) > 8) {
+        if (Math.abs(deltaX) > Math.abs(deltaY)) {
+          stateRef.current = 'DRAGGING';
+          setIsDragging(true);
+        } else {
+          // Vertical intent detected: cancel swipe and reset
+          resetGesture(e);
+        }
+      }
+    }
+
+    if (stateRef.current === 'DRAGGING') {
+      if (e.cancelable) e.preventDefault();
+      setDragOffset(deltaX);
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    if (e.pointerId !== gestureRef.current.pointerId) return;
+
+    const deltaX = e.clientX - gestureRef.current.startX;
+    const duration = Date.now() - gestureRef.current.startTime;
+
+    if (stateRef.current === 'DRAGGING') {
+      const containerWidth = containerRef.current?.offsetWidth || 300;
+      const threshold = containerWidth * 0.2;
+      
+      stateRef.current = 'ANIMATING';
+      setIsAnimating(true);
+
+      if (Math.abs(deltaX) > threshold) {
+        const direction = deltaX > 0 ? -1 : 1;
+        setDragOffset(direction === 1 ? -containerWidth : containerWidth);
+      } else {
+        setDragOffset(0);
+      }
+    } else if (stateRef.current === 'TOUCHING') {
+      // Manual Tap detection
+      if (Math.abs(deltaX) < 8 && duration < 250) {
+        gestureRef.current.lastClickTime = Date.now();
+        // The individual DayCard's onClick will still fire or we can trigger selection logic if needed.
+        // But for safety against "ignored taps", we allow the event to propagate.
+      }
+      resetGesture(e);
+    } else {
+      resetGesture(e);
+    }
+  };
+
+  const handlePointerCancel = (e: React.PointerEvent) => {
+    if (e.pointerId === gestureRef.current.pointerId) {
+      if (stateRef.current === 'DRAGGING') {
+        stateRef.current = 'ANIMATING';
+        setIsAnimating(true);
+        setDragOffset(0);
+      } else {
+        resetGesture(e);
+      }
+    }
+  };
+
+  const handleTransitionEnd = () => {
+    if (stateRef.current === 'ANIMATING') {
+      const containerWidth = containerRef.current?.offsetWidth || 300;
+      if (Math.abs(dragOffset) >= containerWidth) {
+        const direction = dragOffset < 0 ? 1 : -1;
+        setWeekOffset(prev => prev + direction);
+      }
       setDragOffset(0);
       setIsAnimating(false);
-    }, 200);
-  }, []);
+      stateRef.current = 'IDLE';
+    }
+  };
 
-  const cancelSwipe = useCallback(() => {
-    setIsAnimating(true);
-    setDragOffset(0);
-    setTimeout(() => {
-      setIsAnimating(false);
-    }, 200);
-  }, []);
-
-  // Strict State Machine for Touch
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    const resetGesture = () => {
-      gestureRef.current = {
-        startX: 0,
-        startY: 0,
-        currentX: 0,
-        currentY: 0,
-        isDragging: false,
-        directionLocked: null,
-        hasMoved: false,
-        startTime: 0
-      };
-    };
-
-    const handleTouchStart = (e: TouchEvent) => {
-      if (isAnimating) return;
-      const touch = e.touches[0];
-      resetGesture();
-      gestureRef.current.startX = touch.clientX;
-      gestureRef.current.startY = touch.clientY;
-      gestureRef.current.startTime = Date.now();
-    };
-
-    const handleTouchMove = (e: TouchEvent) => {
-      const g = gestureRef.current;
-      if (g.startTime === 0 || isAnimating) return;
-
-      const touch = e.touches[0];
-      g.currentX = touch.clientX;
-      g.currentY = touch.clientY;
-
-      const deltaX = g.currentX - g.startX;
-      const deltaY = g.currentY - g.startY;
-
-      // Detect Intent / Direction Lock
-      if (g.directionLocked === null) {
-        if (Math.abs(deltaX) > 8 || Math.abs(deltaY) > 8) {
-          g.directionLocked = Math.abs(deltaX) > Math.abs(deltaY) ? 'horizontal' : 'vertical';
-        }
-      }
-
-      if (g.directionLocked === 'horizontal') {
-        // PREVENT browser scroll/bounce in Safari
-        if (e.cancelable) e.preventDefault();
-        
-        g.isDragging = true;
-        g.hasMoved = true;
-        
-        // Sync to React state for UI update
-        if (!isDragging) setIsDragging(true);
-        setDragOffset(deltaX);
-      }
-    };
-
-    const handleTouchEnd = (e: TouchEvent) => {
-      const g = gestureRef.current;
-      if (g.startTime === 0) return;
-
-      const duration = Date.now() - g.startTime;
-      const deltaX = g.currentX !== 0 ? g.currentX - g.startX : 0;
-      const totalDist = Math.sqrt(Math.pow(deltaX, 2) + Math.pow(g.currentY - g.startY, 2));
-
-      // 1. Check for TAP (Click)
-      // If movement is tiny and duration is short, let the button's onClick handle it
-      // BUT if we are in horizontal lock, we must decide here to cancel or finish
-      
-      if (g.directionLocked === 'horizontal' && g.isDragging) {
-        const containerWidth = container.offsetWidth || 300;
-        const threshold = containerWidth * 0.2;
-        
-        if (Math.abs(deltaX) > threshold) {
-          const direction = deltaX > 0 ? -1 : 1;
-          finishSwipe(direction);
-        } else {
-          cancelSwipe();
-        }
-      } else if (!g.hasMoved && totalDist < 10 && duration < 300) {
-        // This was a clean tap. 
-        // We don't preventDefault here, allowing the button's onClick to fire naturally.
-      }
-
-      // 2. ABSOLUTE RESET
-      setIsDragging(false);
-      resetGesture();
-    };
-
-    const handleTouchCancel = () => {
-      if (gestureRef.current.isDragging) {
-        cancelSwipe();
-      }
-      setIsDragging(false);
-      resetGesture();
-    };
-
-    container.addEventListener('touchstart', handleTouchStart, { passive: false });
-    container.addEventListener('touchmove', handleTouchMove, { passive: false });
-    container.addEventListener('touchend', handleTouchEnd, { passive: false });
-    container.addEventListener('touchcancel', handleTouchCancel, { passive: false });
-
-    return () => {
-      container.removeEventListener('touchstart', handleTouchStart);
-      container.removeEventListener('touchmove', handleTouchMove);
-      container.removeEventListener('touchend', handleTouchEnd);
-      container.removeEventListener('touchcancel', handleTouchCancel);
-    };
-  }, [isAnimating, isDragging, finishSwipe, cancelSwipe]);
-
-  // Mouse Drag Support (Desktop)
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if (isAnimating) return;
-    const g = gestureRef.current;
-    g.startX = e.clientX;
-    g.startTime = Date.now();
-    g.directionLocked = 'horizontal'; // Mouse drag is always horizontal in this UI
-    
-    const onMouseMove = (moveEvent: MouseEvent) => {
-      const deltaX = moveEvent.clientX - g.startX;
-      if (Math.abs(deltaX) > 5) {
-        g.isDragging = true;
-        g.hasMoved = true;
-        setIsDragging(true);
-        setDragOffset(deltaX);
-      }
-    };
-
-    const onMouseUp = (upEvent: MouseEvent) => {
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
-      
-      if (g.isDragging) {
-        const deltaX = upEvent.clientX - g.startX;
-        const containerWidth = containerRef.current?.offsetWidth || 300;
-        const threshold = containerWidth * 0.2;
-        if (Math.abs(deltaX) > threshold) {
-          finishSwipe(deltaX > 0 ? -1 : 1);
-        } else {
-          cancelSwipe();
-        }
-      }
-      
-      // Delay reset slightly to avoid blocking click if movement was tiny
-      setTimeout(() => {
-        setIsDragging(false);
-        resetGesture();
-      }, 0);
-    };
-
-    const resetGesture = () => {
-      g.startX = 0;
-      g.startTime = 0;
-      g.isDragging = false;
-      g.hasMoved = false;
-    };
-
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
+  // Selection Guard
+  const handleDaySelect = (day: Date) => {
+    // Only allow selection if we aren't dragging and weren't just dragging
+    if (stateRef.current === 'IDLE' || stateRef.current === 'TOUCHING') {
+      onDateSelect?.(day);
+    }
   };
 
   const getDayStatus = (day: Date) => {
@@ -343,7 +268,6 @@ export function WeekCalendar({
 
   return (
     <div className="space-y-4">
-      {/* Header */}
       <div className="flex items-center justify-between px-1">
         <div className="flex items-center gap-2">
           {viewMode === 'month' ? (
@@ -397,15 +321,17 @@ export function WeekCalendar({
         </div>
       </div>
 
-      {/* View Container */}
       <div className="overflow-hidden">
         {viewMode === 'week' ? (
           <div 
             ref={containerRef}
             className="relative w-full h-[64px] touch-none cursor-grab active:cursor-grabbing select-none overflow-hidden"
-            onMouseDown={handleMouseDown}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerCancel}
+            onTransitionEnd={handleTransitionEnd}
           >
-            {/* Current Layer */}
             <div 
               className={`absolute inset-0 flex gap-1 w-full ${isAnimating ? 'transition-all duration-200 ease-out' : ''}`}
               style={{ 
@@ -423,12 +349,11 @@ export function WeekCalendar({
                   dayStatus={getDayStatus(day)}
                   dayTotal={getDayTotal(day)}
                   formattedAmount={formatCompactAmount(getDayTotal(day))}
-                  onSelect={(d) => !gestureRef.current.hasMoved && onDateSelect?.(d)}
+                  onSelect={handleDaySelect}
                 />
               ))}
             </div>
 
-            {/* Incoming Layer */}
             {(isDragging || isAnimating) && (
               <div 
                 className={`absolute inset-0 flex gap-1 w-full ${isAnimating ? 'transition-all duration-200 ease-out' : ''}`}
@@ -447,7 +372,7 @@ export function WeekCalendar({
                     dayStatus={getDayStatus(day)}
                     dayTotal={getDayTotal(day)}
                     formattedAmount={formatCompactAmount(getDayTotal(day))}
-                    onSelect={(d) => !gestureRef.current.hasMoved && onDateSelect?.(d)}
+                    onSelect={handleDaySelect}
                   />
                 ))}
               </div>
