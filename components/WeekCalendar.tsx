@@ -15,7 +15,7 @@ import {
   isToday as isTodayFn
 } from 'date-fns';
 import { tr } from 'date-fns/locale';
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, List } from 'lucide-react';
 import { Payment } from './UpcomingPayments';
 
@@ -102,62 +102,93 @@ export function WeekCalendar({
   const [isDragging, setIsDragging] = useState(false);
   const [isAnimating, setIsAnimating] = useState(false);
   
-  const touchStartRef = useRef<number | null>(null);
+  const touchStartRef = useRef<{ x: number, y: number } | null>(null);
+  const swipeLockedRef = useRef<'horizontal' | 'vertical' | null>(null);
   const hasMovedRef = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const today = new Date();
 
-  const getDayStatus = (day: Date) => {
-    const dayStr = format(day, 'yyyy-MM-dd');
-    const dayPayments = payments.filter(p => format(p.dueDate, 'yyyy-MM-dd') === dayStr);
-    if (dayPayments.length === 0) return null;
-    return dayPayments.some(p => p.status === 'overdue') ? 'overdue' : 'pending';
-  };
+  // Safari-compatible touch handling
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
 
-  const formatCompactAmount = (amount: number) => {
-    if (amount === 0) return null;
-    const absAmount = Math.abs(amount);
-    if (absAmount >= 1000) {
-      const formatted = (absAmount / 1000).toFixed(1).replace(/\.0$/, '');
-      return `₺${formatted}K`;
-    }
-    return `₺${Math.floor(absAmount)}`;
-  };
+    const handleTouchStart = (e: TouchEvent) => {
+      if (isAnimating) return;
+      const touch = e.touches[0];
+      touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+      swipeLockedRef.current = null;
+      hasMovedRef.current = false;
+    };
 
-  const getDayTotal = (day: Date) => {
-    const dayStr = format(day, 'yyyy-MM-dd');
-    return payments
-      .filter(p => format(p.dueDate, 'yyyy-MM-dd') === dayStr)
-      .reduce((sum, p) => sum + p.amount, 0);
-  };
+    const handleTouchMove = (e: TouchEvent) => {
+      if (touchStartRef.current === null || isAnimating) return;
+      const touch = e.touches[0];
+      const diffX = touch.clientX - touchStartRef.current.x;
+      const diffY = touch.clientY - touchStartRef.current.y;
 
-  // Week view days
-  const currentWeekDays = Array.from({ length: 7 }, (_, i) => addDays(today, (weekOffset * 7) + i));
-  const incomingOffset = dragOffset > 0 ? -1 : 1;
-  const incomingWeekDays = Array.from({ length: 7 }, (_, i) => addDays(today, ((weekOffset + incomingOffset) * 7) + i));
+      // Determine intent if not locked
+      if (swipeLockedRef.current === null) {
+        if (Math.abs(diffX) > 10 || Math.abs(diffY) > 10) {
+          swipeLockedRef.current = Math.abs(diffX) > Math.abs(diffY) ? 'horizontal' : 'vertical';
+        }
+      }
 
-  // Month view days
-  const monthStart = startOfMonth(currentDate);
-  const monthEnd = endOfMonth(monthStart);
-  const startDate = startOfWeek(monthStart, { weekStartsOn: 1 });
-  const endDate = endOfWeek(monthEnd, { weekStartsOn: 1 });
-  const monthDays = eachDayOfInterval({ start: startDate, end: endDate });
+      if (swipeLockedRef.current === 'horizontal') {
+        // LOCK for Safari: prevent browser scroll/bounce during horizontal swipe
+        if (e.cancelable) e.preventDefault();
+        
+        setIsDragging(true);
+        setDragOffset(diffX);
+        if (Math.abs(diffX) > 10) {
+          hasMovedRef.current = true;
+        }
+      }
+    };
 
-  const nextMonth = () => setCurrentDate(addMonths(currentDate, 1));
-  const prevMonth = () => setCurrentDate(subMonths(currentDate, 1));
+    const handleTouchEnd = () => {
+      if (touchStartRef.current === null) return;
+      
+      if (swipeLockedRef.current === 'horizontal' && isDragging) {
+        const containerWidth = containerRef.current?.offsetWidth || 300;
+        const threshold = containerWidth * 0.2;
+        
+        if (Math.abs(dragOffset) > threshold) {
+          const direction = dragOffset > 0 ? -1 : 1;
+          finishSwipe(direction);
+        } else {
+          cancelSwipe();
+        }
+      }
+      
+      touchStartRef.current = null;
+      swipeLockedRef.current = null;
+      setIsDragging(false);
+    };
+
+    // Attach with { passive: false } for Safari preventDefault support
+    container.addEventListener('touchstart', handleTouchStart, { passive: false });
+    container.addEventListener('touchmove', handleTouchMove, { passive: false });
+    container.addEventListener('touchend', handleTouchEnd, { passive: false });
+
+    return () => {
+      container.removeEventListener('touchstart', handleTouchStart);
+      container.removeEventListener('touchmove', handleTouchMove);
+      container.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [isAnimating, isDragging, dragOffset]);
 
   const startDrag = (x: number) => {
     if (isAnimating) return;
-    touchStartRef.current = x;
+    touchStartRef.current = { x, y: 0 };
     hasMovedRef.current = false;
   };
 
   const moveDrag = (x: number) => {
     if (touchStartRef.current === null) return;
-    const diff = x - touchStartRef.current;
+    const diff = x - touchStartRef.current.x;
     
-    // Unify threshold to 10px for both dragging state and click cancellation
     if (!isDragging && Math.abs(diff) > 10) {
       setIsDragging(true);
       hasMovedRef.current = true;
@@ -209,11 +240,49 @@ export function WeekCalendar({
     }, 200);
   };
 
+  const getDayStatus = (day: Date) => {
+    const dayStr = format(day, 'yyyy-MM-dd');
+    const dayPayments = payments.filter(p => format(p.dueDate, 'yyyy-MM-dd') === dayStr);
+    if (dayPayments.length === 0) return null;
+    return dayPayments.some(p => p.status === 'overdue') ? 'overdue' : 'pending';
+  };
+
+  const formatCompactAmount = (amount: number) => {
+    if (amount === 0) return null;
+    const absAmount = Math.abs(amount);
+    if (absAmount >= 1000) {
+      const formatted = (absAmount / 1000).toFixed(1).replace(/\.0$/, '');
+      return `₺${formatted}K`;
+    }
+    return `₺${Math.floor(absAmount)}`;
+  };
+
+  const getDayTotal = (day: Date) => {
+    const dayStr = format(day, 'yyyy-MM-dd');
+    return payments
+      .filter(p => format(p.dueDate, 'yyyy-MM-dd') === dayStr)
+      .reduce((sum, p) => sum + p.amount, 0);
+  };
+
+  const nextMonth = () => setCurrentDate(addMonths(currentDate, 1));
+  const prevMonth = () => setCurrentDate(subMonths(currentDate, 1));
+
+  // Week view days
+  const currentWeekDays = Array.from({ length: 7 }, (_, i) => addDays(today, (weekOffset * 7) + i));
+  const incomingOffset = dragOffset > 0 ? -1 : 1;
+  const incomingWeekDays = Array.from({ length: 7 }, (_, i) => addDays(today, ((weekOffset + incomingOffset) * 7) + i));
+
+  // Month view days
+  const monthStart = startOfMonth(currentDate);
+  const monthEnd = endOfMonth(monthStart);
+  const startDate = startOfWeek(monthStart, { weekStartsOn: 1 });
+  const endDate = endOfWeek(monthEnd, { weekStartsOn: 1 });
+  const monthDays = eachDayOfInterval({ start: startDate, end: endDate });
+
   const dragProgress = containerRef.current ? Math.min(Math.abs(dragOffset) / containerRef.current.offsetWidth, 1) : 0;
 
   return (
     <div className="space-y-4">
-      {/* Header with Toggle */}
       <div className="flex items-center justify-between px-1">
         <div className="flex items-center gap-2">
           {viewMode === 'month' ? (
@@ -267,21 +336,16 @@ export function WeekCalendar({
         </div>
       </div>
 
-      {/* Views */}
       <div className="overflow-hidden">
         {viewMode === 'week' ? (
           <div 
             ref={containerRef}
-            className="relative w-full h-[64px] touch-pan-y cursor-grab active:cursor-grabbing select-none"
-            onTouchStart={(e) => startDrag(e.touches[0].clientX)}
-            onTouchMove={(e) => moveDrag(e.touches[0].clientX)}
-            onTouchEnd={endDrag}
+            className="relative w-full h-[64px] touch-none cursor-grab active:cursor-grabbing select-none overflow-hidden"
             onMouseDown={(e) => startDrag(e.clientX)}
             onMouseMove={(e) => moveDrag(e.clientX)}
             onMouseUp={endDrag}
             onMouseLeave={endDrag}
           >
-            {/* Current Week Layer */}
             <div 
               className={`absolute inset-0 flex gap-1 w-full ${isAnimating ? 'transition-all duration-200 ease-out' : ''}`}
               style={{ 
@@ -306,7 +370,6 @@ export function WeekCalendar({
               ))}
             </div>
 
-            {/* Incoming Week Layer */}
             {(isDragging || isAnimating) && (
               <div 
                 className={`absolute inset-0 flex gap-1 w-full ${isAnimating ? 'transition-all duration-200 ease-out' : ''}`}
@@ -335,7 +398,6 @@ export function WeekCalendar({
           </div>
         ) : (
           <div className="bg-zinc-900 rounded-3xl p-4 border border-zinc-800 shadow-2xl animate-in fade-in zoom-in duration-300">
-            {/* Weekday Labels */}
             <div className="grid grid-cols-7 mb-2">
               {['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'].map((d) => (
                 <div key={d} className="text-[10px] text-center font-bold text-white/40 uppercase tracking-tighter py-2">
@@ -343,7 +405,6 @@ export function WeekCalendar({
                 </div>
               ))}
             </div>
-            {/* Month Grid */}
             <div className="grid grid-cols-7 gap-1">
               {monthDays.map((day, i) => {
                 const isCurrentMonth = isSameMonth(day, currentDate);
