@@ -66,10 +66,10 @@ export function useVoiceRecorder() {
       recorder.start();
       setIsRecording(true);
 
-      // Auto-stop after 7 seconds
+      // Auto-stop after 10 seconds
       timeoutRef.current = setTimeout(() => {
         stopRecording();
-      }, 7000);
+      }, 10000);
 
       return resultPromise;
 

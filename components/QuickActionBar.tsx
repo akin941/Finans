@@ -12,7 +12,7 @@ export function QuickActionBar({ onAddIncome, onAddExpense }: {
   const [category, setCategory] = useState('Diğer');
 
   const categories = [
-    'Market', 'Fatura', 'Kira', 'Yemek', 'Akaryakıt', 
+    'Market', 'Fatura', 'Yemek', 'Akaryakıt', 
     'Ulaşım', 'Eğlence', 'Sağlık', 'Kişisel Bakım', 'Abonelik', 'Diğer'
   ];
 
@@ -21,7 +21,7 @@ export function QuickActionBar({ onAddIncome, onAddExpense }: {
   const handleIncome = () => {
     const value = parseFloat(amount);
     if (value > 0) {
-      onAddIncome(value, description || undefined, category);
+      onAddIncome(value, description || undefined, 'Gelir');
       setAmount('');
       setDescription('');
     }

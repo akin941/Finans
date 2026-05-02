@@ -6,8 +6,7 @@ const openai = new OpenAI({
 });
 
 const ALLOWED_CATEGORIES = [
-  "Market", "Fatura", "Kira", "Yemek", "Akaryakıt", 
-  "Ulaşım", "Eğlence", "Sağlık", "Kişisel Bakım", "Abonelik"
+  "Market", "Fatura", "Yemek", "Akaryakıt", "Ulaşım", "Eğlence", "Sağlık", "Kişisel Bakım", "Abonelik", "Diğer"
 ];
 
 export async function POST(req: NextRequest) {
@@ -38,7 +37,9 @@ export async function POST(req: NextRequest) {
 
     // 2. Parsing (GPT-4o-mini)
     const systemPrompt = `
-      Sen bir finansal asistanasın. Kullanıcının söylediği cümleyi analiz et ve şu formatta JSON döndür:
+      Sen bir finansal asistanasın. Kullanıcının söylediği Türkçe cümleyi analiz et ve sadece JSON formatında döndür.
+
+      OUTPUT FORMAT:
       {
         "type": "income" | "expense",
         "amount": number,
@@ -46,14 +47,25 @@ export async function POST(req: NextRequest) {
         "description": string
       }
 
-      Kurallar:
-      1. Sadece geçerli JSON döndür. Başka metin ekleme.
-      2. Miktarı sayıya dönüştür (örn: "beş yüz" -> 500).
-      3. Kategoriyi şu listeden seç: [${ALLOWED_CATEGORIES.join(", ")}]. 
-         Eğer uygun kategori yoksa mutlaka "Diğer" döndür.
-      4. Description alanına harcamanın ne olduğunu kısa bir şekilde yaz.
-      5. Eğer harcama/gelir tipi net değilse varsayılan olarak "expense" kullan.
-      6. Eğer miktar tespit edilemezse "amount" değerini 0 döndür.
+      RULES:
+      1. TYPE INFERENCE:
+         - INCOME keywords: "gelir", "kazanç", "aldım", "geldi", "ödeme aldım", "maaş", "artı", "+"
+         - EXPENSE keywords: "gider", "harcama", "ödedim", "aldım (alışveriş/market)", "eksi", "-"
+         - If category is clearly expense-related (Market, Fatura, Yemek, Akaryakıt, Ulaşım, Eğlence, Sağlık, Kişisel Bakım, Abonelik) -> expense
+         - If NO category and only amount + location/route/name (e.g., "500 TL Bayrampaşa Şişli") -> income
+         - Fallback: expense
+      2. CATEGORY NORMALIZATION (Select from this list ONLY):
+         [Market, Fatura, Yemek, Akaryakıt, Ulaşım, Eğlence, Sağlık, Kişisel Bakım, Abonelik, Diğer]
+      3. DESCRIPTION:
+         - Extract ALL meaningful words remaining after removing amount and category.
+         - NEVER return empty description if extra words exist.
+         - Keep it short but meaningful.
+      4. AMOUNT:
+         - Convert spoken Turkish numbers to numeric (e.g., "beş yüz" -> 500).
+         - Remove currency words (TL, lira).
+      5. STRICT MODE:
+         - Output ONLY JSON. No explanation text.
+         - amount must be > 0.
     `;
 
     const response = await openai.chat.completions.create({
@@ -76,7 +88,10 @@ export async function POST(req: NextRequest) {
       parsedData.type = "expense";
     }
 
-    if (!ALLOWED_CATEGORIES.includes(parsedData.category)) {
+    // Force category to "Gelir" for income
+    if (parsedData.type === "income") {
+      parsedData.category = "Gelir";
+    } else if (!ALLOWED_CATEGORIES.includes(parsedData.category)) {
       parsedData.category = "Diğer";
     }
 

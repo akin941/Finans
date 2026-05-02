@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { X, Check, AlertCircle, Edit3 } from 'lucide-react';
+import { X, ArrowDown, ArrowUp, AlertCircle, Edit3 } from 'lucide-react';
 
 interface VoiceInputModalProps {
   isOpen: boolean;
@@ -21,6 +21,12 @@ export function VoiceInputModal({ isOpen, onClose, onConfirm, initialData, error
   const [editAmount, setEditAmount] = useState("");
   const [editCategory, setEditCategory] = useState("");
   const [editDescription, setEditDescription] = useState("");
+
+  useEffect(() => {
+    if (isOpen) {
+      setIsEditing(false);
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     if (initialData) {
@@ -58,10 +64,17 @@ export function VoiceInputModal({ isOpen, onClose, onConfirm, initialData, error
 
           {/* Icon Area */}
           <div className="relative mb-8">
-            <div className={`w-20 h-20 rounded-full flex items-center justify-center transition-all duration-500 ${
-              error ? 'bg-red-500/20' : 'bg-emerald-500/20'
+            <div className={`w-20 h-20 rounded-full flex items-center justify-center transition-all duration-300 ${
+              error ? 'bg-red-500/10' : 
+              initialData?.type === 'income' ? 'bg-emerald-500/15' : 'bg-red-500/15'
             }`}>
-              {error ? <AlertCircle className="w-10 h-10 text-red-500" /> : <Check className="w-10 h-10 text-emerald-500" />}
+              {error ? (
+                <AlertCircle className="w-10 h-10 text-red-500" />
+              ) : initialData?.type === 'income' ? (
+                <ArrowDown className="w-10 h-10 text-emerald-500" />
+              ) : (
+                <ArrowUp className="w-10 h-10 text-red-500" />
+              )}
             </div>
           </div>
 
@@ -76,10 +89,14 @@ export function VoiceInputModal({ isOpen, onClose, onConfirm, initialData, error
               <div className="animate-in slide-in-from-bottom-2 duration-500">
                 {!isEditing ? (
                   <>
-                    <h2 className="text-xl font-black text-white uppercase tracking-tight">
-                      ₺{initialData.amount.toLocaleString()} {initialData.category}
+                    <h2 className={`text-xl font-black uppercase tracking-tight mb-1 ${initialData.type === 'income' ? 'text-emerald-500' : 'text-red-500'}`}>
+                      {initialData.type === 'income' ? '+' : '-'}₺{initialData.amount.toLocaleString()} {initialData.type === 'income' ? 'Kazanç' : initialData.category.toLowerCase() + ' gideri'} eklensin mi?
                     </h2>
-                    <p className="text-zinc-500 text-sm">"{initialData.description}" eklensin mi?</p>
+                    {initialData.description && (
+                      <p className="text-zinc-500 text-xs italic opacity-80 underline decoration-zinc-800 underline-offset-4">
+                        "{initialData.description}"
+                      </p>
+                    )}
                   </>
                 ) : (
                   <div className="space-y-3 w-full text-left">
@@ -96,7 +113,7 @@ export function VoiceInputModal({ isOpen, onClose, onConfirm, initialData, error
                       onChange={(e) => setEditCategory(e.target.value)}
                       className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-white text-sm outline-none focus:ring-2 focus:ring-emerald-500"
                     >
-                      {["Market", "Fatura", "Kira", "Yemek", "Akaryakıt", "Ulaşım", "Eğlence", "Sağlık", "Kişisel Bakım", "Abonelik", "Diğer"].map(c => (
+                      {["Market", "Fatura", "Yemek", "Akaryakıt", "Ulaşım", "Eğlence", "Sağlık", "Kişisel Bakım", "Abonelik", "Gelir", "Diğer"].map(c => (
                         <option key={c} value={c}>{c}</option>
                       ))}
                     </select>

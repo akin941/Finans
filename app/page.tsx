@@ -230,6 +230,7 @@ export default function Home() {
   const handleVoiceConfirm = (data: { type: 'income' | 'expense', amount: number, category: string, description: string }) => {
     handleAddTransaction(data.type, data.amount, data.description, data.category);
     setIsVoiceModalOpen(false);
+    setVoiceResult(null); // Clear result after confirm
   };
 
   const toggleVoiceRecording = async () => {
