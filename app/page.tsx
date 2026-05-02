@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 import { addMonths, format, startOfMonth } from "date-fns";
+import { tr } from "date-fns/locale";
 import { BalanceChart } from "@/components/BalanceChart";
 import { RecentTransactions, Transaction } from "@/components/RecentTransactions";
 import { UpcomingPayments, Payment } from "@/components/UpcomingPayments";
@@ -10,7 +11,8 @@ import { DebtsOverview, Debt } from "@/components/DebtsOverview";
 import { QuickActionBar } from "@/components/QuickActionBar";
 import { BottomNav, NavItem } from "@/components/BottomNav";
 import { WeekCalendar } from "@/components/WeekCalendar";
-import { CheckCircle2, AlertCircle, X } from "lucide-react";
+import { ProfessionalPieChart } from "@/components/AnalyticsCharts";
+import { CheckCircle2, AlertCircle, X, CreditCard, ChevronRight, ArrowDownLeft, ArrowUpRight } from "lucide-react";
 
 const supabase = createClient(
   "https://cvymnyaqeupwdpknbqlo.supabase.co",
@@ -32,8 +34,18 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<NavItem>('home');
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<Toast | null>(null);
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [showDebtsModal, setShowDebtsModal] = useState(false);
+  const [showTransactionsModal, setShowTransactionsModal] = useState(false);
+  const [isOverdueExpanded, setIsOverdueExpanded] = useState(false);
+  const [isUpcomingExpanded, setIsUpcomingExpanded] = useState(false);
+  const [dashboardDate, setDashboardDate] = useState<Date>(new Date());
+  const [drilldownCategory, setDrilldownCategory] = useState<string | null>(null);
+  const [expenseTimeRange, setExpenseTimeRange] = useState<'month' | 'all'>('month');
+  const [expenseSelectedDate, setExpenseSelectedDate] = useState<Date>(new Date());
 
   useEffect(() => {
+    console.log("App mounted, loading data...");
     loadData();
   }, []);
 
@@ -118,6 +130,11 @@ export default function Home() {
         });
       setPayments(mappedPayments);
 
+      const totalDebtAmount = (allInstData || [])
+        .filter(inst => inst.status !== 'paid')
+        .reduce((acc, inst) => acc + (inst.amount - (inst.paid_amount || 0)), 0);
+      setTotalDebt(totalDebtAmount);
+
       // Fetch Debts with Banks
       const { data: debtData } = await supabase
         .from("debts")
@@ -164,12 +181,13 @@ export default function Home() {
     }
   }
 
-  const handleAddTransaction = async (type: 'income' | 'expense', amount: number, description?: string) => {
+  const handleAddTransaction = async (type: 'income' | 'expense', amount: number, description?: string, category?: string) => {
     const value = type === 'income' ? amount : -amount;
     const { error } = await supabase.from("transactions").insert({
       type,
       amount: value,
-      description: description || (type === 'income' ? 'Gelir' : 'Gider')
+      description: description || (type === 'income' ? 'Gelir' : 'Gider'),
+      category: category || 'Diğer'
     });
 
     if (error) {
@@ -478,7 +496,9 @@ export default function Home() {
       )}
 
       <div className="max-w-md mx-auto px-4 pt-8 space-y-8">
-        {/* Header / Calendar */}
+        {activeTab === 'home' && (
+          <div className="space-y-8 animate-in fade-in duration-500">
+            {/* Header / Calendar */}
         <section>
           <div className="flex items-center justify-between mb-6">
             <div>
@@ -489,60 +509,485 @@ export default function Home() {
                <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Akin" alt="Avatar" />
             </div>
           </div>
-          <WeekCalendar payments={payments} />
-        </section>
-
-        {/* Balance & Chart */}
-        <section className="grid grid-cols-1 gap-4">
-          <div className="bg-zinc-900 rounded-2xl p-6 border border-zinc-800 shadow-xl">
-             <div className="text-zinc-500 text-sm mb-1">Toplam Kullanılabilir Bakiye</div>
-             <div className="text-4xl font-black text-white tracking-tight">₺{balance.toLocaleString()}</div>
-              <div className="mt-4 flex items-center gap-2 text-sm font-medium">
-                <span className={`px-2 py-0.5 rounded-full ${monthlyNet >= 0 ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}`}>
-                  {monthlyNet >= 0 ? '+' : '-'}₺{Math.abs(monthlyNet).toLocaleString()} bu ay
-                </span>
-             </div>
-          </div>
-          <BalanceChart 
-            currentCash={balance} 
-            currentDebt={totalDebt} 
-            monthlyNet={monthlyNet}
+          <WeekCalendar 
+            payments={payments} 
+            selectedDate={selectedDate || undefined}
+            onDateSelect={setSelectedDate}
           />
+
+          {selectedDate && (
+            <div className="mt-6 space-y-4 animate-in slide-in-from-bottom-2 duration-300">
+              <div className="flex items-center justify-between px-1">
+                <h3 className="text-sm uppercase tracking-wide text-zinc-500">
+                  {format(selectedDate, 'd MMMM', { locale: tr })} - Günlük Ödemeler
+                </h3>
+                <button 
+                  onClick={() => setSelectedDate(null)}
+                  className="text-zinc-500 hover:text-white text-xs font-medium transition-colors"
+                >
+                  Kapat
+                </button>
+              </div>
+              
+              <div className="space-y-3">
+                {payments?.filter(p => format(p.dueDate, 'yyyy-MM-dd') === format(selectedDate, 'yyyy-MM-dd')).length > 0 ? (
+                  payments
+                    ?.filter(p => format(p.dueDate, 'yyyy-MM-dd') === format(selectedDate, 'yyyy-MM-dd'))
+                    .map(payment => (
+                      <div key={payment.id} className="bg-zinc-900 rounded-xl p-4 border border-zinc-800 flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="bg-zinc-800 rounded-lg p-2">
+                            <CreditCard className="w-4 h-4 text-zinc-400" />
+                          </div>
+                          <div>
+                            <div className="text-sm font-semibold text-white">{payment.bank}</div>
+                            <div className="text-xs text-zinc-500">
+                              {payment.installmentNumber && payment.totalInstallments 
+                                ? `${payment.installmentNumber} / ${payment.totalInstallments} Taksit` 
+                                : 'Ödeme'}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-sm font-bold text-white">₺{payment.amount.toLocaleString()}</div>
+                          <button 
+                            onClick={() => handlePayInstallment(payment.id, payment.amount)}
+                            className="text-[10px] text-emerald-500 hover:text-emerald-400 font-bold uppercase tracking-wider mt-1"
+                          >
+                            Hızlı Öde
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                ) : (
+                  <div className="bg-zinc-900/50 rounded-xl py-8 text-center border border-zinc-800/50 border-dashed">
+                    <p className="text-zinc-500 text-sm italic">Bu gün ödeme yok</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </section>
 
-        {/* Quick Actions */}
+        {/* Assets Summary */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 shadow-xl">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[10px] uppercase font-black text-zinc-500 tracking-widest mb-1">Toplam Varlık</p>
+              <h2 className="text-2xl font-black text-white">₺{balance.toLocaleString()}</h2>
+            </div>
+            <div className="w-10 h-10 bg-emerald-500/10 rounded-xl flex items-center justify-center">
+              <CreditCard className="w-5 h-5 text-emerald-500" />
+            </div>
+          </div>
+        </div>
+
+        {/* Quick Actions (Input area) */}
         <QuickActionBar 
-          onAddIncome={(amt, desc) => handleAddTransaction('income', amt, desc)}
-          onAddExpense={(amt, desc) => handleAddTransaction('expense', amt, desc)}
+          onAddIncome={(amt, desc, cat) => handleAddTransaction('income', amt, desc, cat)}
+          onAddExpense={(amt, desc, cat) => handleAddTransaction('expense', amt, desc, cat)}
         />
 
-        {/* Upcoming Payments */}
-        <section>
-          <UpcomingPayments 
-            payments={payments} 
-            onPayment={handlePayInstallment} 
-          />
+        {/* Professional Analytics Chart (Current Month Only) */}
+        <section className="animate-in fade-in duration-700">
+          <ProfessionalPieChart transactions={transactions.filter(t => 
+            t.type === 'expense' && 
+            t.date.getMonth() === new Date().getMonth() && 
+            t.date.getFullYear() === new Date().getFullYear()
+          )} />
         </section>
 
-        {/* Debts Overview */}
-        <section>
-          <DebtsOverview 
-            debts={debts} 
-            onAddDebt={handleAddDebt} 
-            onUpdateDebt={handleUpdateDebt}
-            onDeleteDebt={handleDeleteDebt}
-          />
+        {/* Collapsible Overdue Section */}
+        {payments?.filter(p => p.status === 'overdue').length > 0 && (
+          <section className="animate-in slide-in-from-top-2 duration-500">
+            <button 
+              onClick={() => setIsOverdueExpanded(!isOverdueExpanded)}
+              className="w-full flex items-center justify-between bg-zinc-900 border border-red-500/20 rounded-2xl p-5 shadow-lg group transition-all active:scale-[0.98]"
+            >
+              <div className="flex items-center gap-3">
+                <div className="relative">
+                  <div className="w-3 h-3 rounded-full bg-red-500 animate-ping absolute inset-0" />
+                  <div className="w-3 h-3 rounded-full bg-red-500 relative" />
+                </div>
+                <div className="text-left">
+                  <h3 className="text-sm uppercase tracking-widest text-red-400 font-black">Gecikmiş Borçlar</h3>
+                  <div className="text-xs text-zinc-500 mt-0.5">Toplam {payments.filter(p => p.status === 'overdue').length} gecikmiş taksit</div>
+                </div>
+              </div>
+              <div className="text-right flex items-center gap-3">
+                <div className="text-lg font-black text-white">₺{payments.filter(p => p.status === 'overdue').reduce((acc, p) => acc + p.amount, 0).toLocaleString()}</div>
+                <div className={`text-zinc-500 group-hover:text-white transition-transform duration-300 ${isOverdueExpanded ? 'rotate-180' : ''}`}>
+                  <ChevronRight className="w-5 h-5 rotate-90" />
+                </div>
+              </div>
+            </button>
+
+            {isOverdueExpanded && (
+              <div className="mt-3 space-y-3 animate-in slide-in-from-top-4 duration-300">
+                {payments
+                  ?.filter(p => p.status === 'overdue')
+                  .map(payment => (
+                    <div key={payment.id} className="bg-zinc-900/50 border border-red-500/10 rounded-xl p-4 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="bg-red-500/10 rounded-lg p-2 text-red-500">
+                          <AlertCircle className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <div className="font-semibold text-white text-sm">{payment.bank}</div>
+                          <div className="text-[10px] text-red-400/70 font-black uppercase tracking-wider">
+                            {format(payment.dueDate, 'd MMMM', { locale: tr })} Gecikmiş
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm font-black text-white tracking-tight">₺{payment.amount.toLocaleString()}</div>
+                        <button 
+                          onClick={() => handlePayInstallment(payment.id, payment.amount)}
+                          className="text-[10px] text-red-500 hover:text-red-400 font-black uppercase tracking-widest mt-1"
+                        >
+                          Öde
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </section>
+        )}
+        {/* Debt Summary */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 shadow-xl">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[10px] uppercase font-black text-zinc-500 tracking-widest mb-1">Toplam Borç</p>
+              <h2 className="text-2xl font-black text-red-500">₺{totalDebt.toLocaleString()}</h2>
+            </div>
+            <div className="w-10 h-10 bg-red-500/10 rounded-xl flex items-center justify-center">
+              <CreditCard className="w-5 h-5 text-red-500" />
+            </div>
+          </div>
+        </div>
+
+        {/* Collapsible Upcoming Payments */}
+        <section className="animate-in slide-in-from-top-2 duration-500">
+          <button 
+            onClick={() => setIsUpcomingExpanded(!isUpcomingExpanded)}
+            className="w-full flex items-center justify-between bg-zinc-900 border border-zinc-800 rounded-2xl p-5 shadow-lg group transition-all active:scale-[0.98]"
+          >
+            <div className="flex items-center gap-4">
+              <div className="bg-emerald-500/10 text-emerald-500 rounded-xl p-3 group-hover:scale-110 transition-transform">
+                <CreditCard className="w-6 h-6" />
+              </div>
+              <div className="text-left">
+                <div className="text-lg font-bold">Yaklaşan Ödemeler</div>
+                <div className="text-xs text-zinc-500">{payments.filter(p => p.status !== 'paid' && p.status !== 'overdue').length} bekleyen taksit</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-black text-emerald-500 uppercase tracking-widest">
+                {isUpcomingExpanded ? 'Gizle' : 'Göster'}
+              </span>
+              <div className={`text-zinc-600 group-hover:text-white transition-transform duration-300 ${isUpcomingExpanded ? 'rotate-180' : ''}`}>
+                <ChevronRight className="w-5 h-5 rotate-90" />
+              </div>
+            </div>
+          </button>
+
+          {isUpcomingExpanded && (
+            <div className="mt-4 animate-in slide-in-from-top-4 duration-300">
+              <UpcomingPayments 
+                payments={payments} 
+                onPayment={handlePayInstallment} 
+              />
+            </div>
+          )}
         </section>
 
-        {/* Recent Transactions */}
+        {/* Debts Overview Modal Trigger */}
         <section>
+          <button 
+            onClick={() => setShowDebtsModal(true)}
+            className="w-full bg-zinc-900 hover:bg-zinc-800 text-white rounded-2xl p-5 border border-zinc-800 shadow-lg flex items-center justify-between transition-all group"
+          >
+            <div className="flex items-center gap-4">
+              <div className="bg-emerald-500/10 text-emerald-500 rounded-xl p-3 group-hover:scale-110 transition-transform">
+                <CreditCard className="w-6 h-6" />
+              </div>
+              <div className="text-left">
+                <div className="text-lg font-bold">Borçları Gör</div>
+                <div className="text-xs text-zinc-500">Toplam {debts.length} aktif borç kaydı</div>
+              </div>
+            </div>
+            <ChevronRight className="w-6 h-6 text-zinc-600 group-hover:text-white transition-colors" />
+          </button>
+        </section>
+
+        {/* Recent Transactions & Full View Trigger */}
+        <section className="space-y-4">
+          <div className="flex items-center justify-between px-1">
+            <h3 className="text-sm uppercase tracking-wide text-zinc-500">Son İşlemler</h3>
+            <button 
+              onClick={() => setShowTransactionsModal(true)}
+              className="text-xs font-bold text-emerald-500 hover:text-emerald-400 uppercase tracking-wider"
+            >
+              Tüm İşlemler
+            </button>
+          </div>
           <RecentTransactions 
-            transactions={transactions} 
+            transactions={transactions.slice(0, 5)} 
             onUndo={handleDeleteTransaction}
             onUpdate={handleUpdateTransaction}
           />
         </section>
+          </div>
+        )}
+
+        {activeTab === 'expense' && (
+          <div className="space-y-6 animate-in slide-in-from-right-4 duration-500 pb-20">
+            <div className="flex flex-col">
+              <h1 className="text-3xl font-black text-white">Giderler</h1>
+              <p className="text-zinc-500 text-sm mt-1">Harcama analizi ve geçmişi</p>
+            </div>
+
+            {/* Time Range Filter */}
+            <div className="flex bg-zinc-900/50 p-1 rounded-2xl border border-zinc-800">
+              <button 
+                onClick={() => setExpenseTimeRange('month')}
+                className={`flex-1 py-2 text-xs font-black uppercase tracking-widest rounded-xl transition-all ${expenseTimeRange === 'month' ? 'bg-zinc-800 text-white shadow-lg' : 'text-zinc-500 hover:text-white'}`}
+              >
+                Bu Ay
+              </button>
+              <button 
+                onClick={() => setExpenseTimeRange('all')}
+                className={`flex-1 py-2 text-xs font-black uppercase tracking-widest rounded-xl transition-all ${expenseTimeRange === 'all' ? 'bg-zinc-800 text-white shadow-lg' : 'text-zinc-500 hover:text-white'}`}
+              >
+                Tüm Zamanlar
+              </button>
+            </div>
+
+            {/* Month Navigation (Only for month mode) */}
+            {expenseTimeRange === 'month' && (
+              <div className="flex items-center justify-between bg-zinc-900 border border-zinc-800 rounded-2xl p-4 shadow-lg">
+                <button 
+                  onClick={() => setExpenseSelectedDate(addMonths(expenseSelectedDate, -1))}
+                  className="p-2 hover:bg-zinc-800 rounded-xl text-zinc-400 hover:text-white transition-colors"
+                >
+                  <ChevronRight className="w-5 h-5 rotate-180" />
+                </button>
+                <div className="text-sm font-black text-white uppercase tracking-widest">
+                  {format(expenseSelectedDate, 'MMMM yyyy', { locale: tr })}
+                </div>
+                <button 
+                  onClick={() => setExpenseSelectedDate(addMonths(expenseSelectedDate, 1))}
+                  className="p-2 hover:bg-zinc-800 rounded-xl text-zinc-400 hover:text-white transition-colors"
+                >
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+              </div>
+            )}
+
+            {/* Category Summary List */}
+            <div className="space-y-4">
+              <h3 className="text-xs uppercase tracking-widest text-zinc-500 font-black px-1">Kategori Bazlı Gider</h3>
+              <div className="space-y-2">
+                {Object.entries(
+                  transactions
+                    .filter(t => {
+                      if (t.type !== 'expense') return false;
+                      if (expenseTimeRange === 'all') return true;
+                      return t.date.getMonth() === expenseSelectedDate.getMonth() && 
+                             t.date.getFullYear() === expenseSelectedDate.getFullYear();
+                    })
+                    .reduce((acc, t) => {
+                      const cat = t.category || 'Diğer';
+                      acc[cat] = (acc[cat] || 0) + t.amount;
+                      return acc;
+                    }, {} as { [key: string]: number })
+                )
+                .sort((a, b) => b[1] - a[1])
+                .map(([name, amount]) => (
+                  <button 
+                    key={name}
+                    onClick={() => setDrilldownCategory(drilldownCategory === name ? null : name)}
+                    className={`w-full flex items-center justify-between p-4 rounded-2xl border transition-all ${drilldownCategory === name ? 'bg-zinc-100 border-white text-black' : 'bg-zinc-900 border-zinc-800 text-white'}`}
+                  >
+                    <span className="text-sm font-black uppercase tracking-wide">{name}</span>
+                    <span className="text-sm font-black">₺{amount.toLocaleString()}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Transaction List (Drilldown or Filtered) */}
+            <div className="space-y-4">
+              <h3 className="text-xs uppercase tracking-widest text-zinc-500 font-black px-1">
+                {drilldownCategory ? `${drilldownCategory} Detayları` : 'İşlem Geçmişi'}
+              </h3>
+              <RecentTransactions 
+                transactions={transactions.filter(t => {
+                  if (t.type !== 'expense') return false;
+                  if (drilldownCategory && t.category !== drilldownCategory) return false;
+                  if (expenseTimeRange === 'all') return true;
+                  return t.date.getMonth() === expenseSelectedDate.getMonth() && 
+                         t.date.getFullYear() === expenseSelectedDate.getFullYear();
+                })} 
+                onUndo={handleDeleteTransaction}
+                onUpdate={handleUpdateTransaction}
+              />
+            </div>
+
+            {/* Bottom Summary */}
+            <div className="bg-zinc-950 border-t border-zinc-800 p-6 -mx-4 mt-8">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-zinc-500 font-black uppercase tracking-widest">Toplam Gider</span>
+                <span className="text-2xl font-black text-red-500">
+                  ₺{transactions
+                    .filter(t => {
+                      if (t.type !== 'expense') return false;
+                      if (expenseTimeRange === 'all') return true;
+                      return t.date.getMonth() === expenseSelectedDate.getMonth() && 
+                             t.date.getFullYear() === expenseSelectedDate.getFullYear();
+                    })
+                    .reduce((acc, t) => acc + t.amount, 0).toLocaleString()}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'income' && (
+          <div className="space-y-6 animate-in slide-in-from-right-4 duration-500 pb-12">
+            <div className="flex flex-col">
+              <h1 className="text-3xl font-black text-white">Gelirler</h1>
+              <p className="text-zinc-500 text-sm mt-1">Tüm gelir hareketlerin</p>
+            </div>
+
+            {/* Summaries */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-zinc-900 p-5 rounded-2xl border border-zinc-800">
+                <div className="text-[10px] uppercase font-black text-zinc-500 tracking-widest mb-1">Bu Ay</div>
+                <div className="text-xl font-black text-emerald-500">
+                  ₺{transactions
+                    .filter(t => t.type === 'income' && t.date.getMonth() === new Date().getMonth())
+                    .reduce((acc, t) => acc + t.amount, 0).toLocaleString()}
+                </div>
+              </div>
+              <div className="bg-zinc-900 p-5 rounded-2xl border border-zinc-800">
+                <div className="text-[10px] uppercase font-black text-zinc-500 tracking-widest mb-1">Tüm Zamanlar</div>
+                <div className="text-xl font-black text-white">
+                  ₺{transactions
+                    .filter(t => t.type === 'income')
+                    .reduce((acc, t) => acc + t.amount, 0).toLocaleString()}
+                </div>
+              </div>
+            </div>
+
+            {/* Income History */}
+            <div className="space-y-4">
+              <h3 className="text-xs uppercase tracking-widest text-zinc-500 font-black px-1">Geçmiş Gelirler</h3>
+              <div className="space-y-8">
+                {Object.entries(
+                  (transactions || [])
+                    .filter(t => t.type === 'income')
+                    .reduce((acc, t) => {
+                      const month = format(t.date, 'MMMM yyyy', { locale: tr });
+                      if (!acc[month]) acc[month] = [];
+                      acc[month].push(t);
+                      return acc;
+                    }, {} as { [key: string]: Transaction[] })
+                ).map(([month, monthTrans]) => (
+                  <div key={month} className="space-y-4">
+                    <h3 className="text-[10px] uppercase tracking-widest text-zinc-500 font-black opacity-60 px-1">{month}</h3>
+                    <RecentTransactions 
+                      transactions={monthTrans} 
+                      onUndo={handleDeleteTransaction}
+                      onUpdate={handleUpdateTransaction}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* Debts Modal */}
+      {showDebtsModal && (
+        <div className="fixed inset-0 z-[150] bg-black/80 backdrop-blur-sm flex items-end justify-center sm:items-center">
+          <div className="w-full max-w-md bg-zinc-950 border-t border-x sm:border border-zinc-800 rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col h-[85vh] sm:h-auto sm:max-h-[85vh] animate-in slide-in-from-bottom-full duration-300">
+            <div className="flex items-center justify-between p-6 border-b border-zinc-900">
+              <h2 className="text-xl font-bold text-white">Banka Borçları</h2>
+              <button 
+                onClick={() => setShowDebtsModal(false)}
+                className="bg-zinc-900 p-2 rounded-xl text-zinc-400 hover:text-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+              <DebtsOverview 
+                debts={debts} 
+                onAddDebt={handleAddDebt} 
+                onUpdateDebt={handleUpdateDebt}
+                onDeleteDebt={handleDeleteDebt}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* All Transactions Modal */}
+      {showTransactionsModal && (
+        <div className="fixed inset-0 z-[150] bg-black/80 backdrop-blur-sm flex items-end justify-center sm:items-center">
+          <div className="w-full max-w-md bg-zinc-950 border-t border-x sm:border border-zinc-800 rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col h-[90vh] animate-in slide-in-from-bottom-full duration-300">
+            <div className="flex items-center justify-between p-6 border-b border-zinc-900">
+              <h2 className="text-xl font-bold text-white">Tüm İşlemler</h2>
+              <button 
+                onClick={() => setShowTransactionsModal(false)}
+                className="bg-zinc-900 p-2 rounded-xl text-zinc-400 hover:text-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-8 custom-scrollbar pb-12">
+              {/* Monthly Summary Section */}
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-4">
+                  <div className="text-[10px] uppercase font-black text-emerald-500 tracking-widest mb-1">Bu Ay Gelir</div>
+                  <div className="text-lg font-black text-emerald-400">₺{transactions
+                    .filter(t => t.type === 'income' && t.date.getMonth() === new Date().getMonth())
+                    .reduce((acc, t) => acc + t.amount, 0).toLocaleString()}</div>
+                </div>
+                <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4">
+                  <div className="text-[10px] uppercase font-black text-red-500 tracking-widest mb-1">Bu Ay Gider</div>
+                  <div className="text-lg font-black text-red-400">₺{transactions
+                    .filter(t => t.type === 'expense' && t.date.getMonth() === new Date().getMonth())
+                    .reduce((acc, t) => acc + t.amount, 0).toLocaleString()}</div>
+                </div>
+              </div>
+
+              {Object.entries(
+                (transactions || []).reduce((acc, t) => {
+                  const month = format(t.date, 'MMMM yyyy', { locale: tr });
+                  if (!acc[month]) acc[month] = [];
+                  acc[month].push(t);
+                  return acc;
+                }, {} as { [key: string]: Transaction[] })
+              ).map(([month, monthTrans]) => (
+                <div key={month} className="space-y-4">
+                  <h3 className="text-xs uppercase tracking-widest text-zinc-500 font-black px-2">{month}</h3>
+                  <div className="space-y-2">
+                    <RecentTransactions 
+                      transactions={monthTrans} 
+                      onUndo={handleDeleteTransaction}
+                      onUpdate={handleUpdateTransaction}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       <BottomNav active={activeTab} onNavigate={setActiveTab} />
     </main>

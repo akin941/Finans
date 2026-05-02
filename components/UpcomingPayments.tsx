@@ -184,12 +184,12 @@ export function UpcomingPayments({
 
         {displayedPayments.map(renderPaymentCard)}
 
-        {regularPayments.length > 3 && !showAll && (
+        {regularPayments.length > 3 && (
           <button
-            onClick={() => setShowAll(true)}
+            onClick={() => setShowAll(!showAll)}
             className="w-full bg-zinc-900 hover:bg-zinc-800 text-zinc-400 rounded-xl py-3 font-semibold transition-all border border-zinc-800"
           >
-            Daha Fazla Göster ({regularPayments.length - 3})
+            {showAll ? 'Daha Az Göster' : `Daha Fazla Göster (${regularPayments.length - 3})`}
           </button>
         )}
       </div>

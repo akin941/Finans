@@ -87,7 +87,6 @@ export function RecentTransactions({
 
   return (
     <div className="space-y-3">
-      <h3 className="text-sm uppercase tracking-wide text-zinc-500 px-1">Son İşlemler</h3>
       <div className="space-y-2">
         {transactions.map((transaction) => {
           const style = getTransactionStyle(transaction.type);
@@ -108,11 +107,18 @@ export function RecentTransactions({
                     <Icon className={`w-4 h-4 ${style.text}`} />
                   </div>
                   <div className="flex flex-col text-left min-w-0">
-                    <div className="text-sm font-medium text-white break-words leading-tight">
+                    <div className={`text-sm font-medium text-white leading-tight ${isExpanded ? '' : 'truncate'}`}>
                       {transaction.description}
                     </div>
-                    <div className="text-[10px] text-zinc-500 mt-1 uppercase font-bold tracking-tight">
-                      {format(transaction.date, 'd MMM yyyy', { locale: tr })}
+                    <div className="flex items-center gap-2 mt-1">
+                      <div className="text-[9px] text-zinc-500 uppercase font-black tracking-tight">
+                        {format(transaction.date, 'd MMM yyyy', { locale: tr })}
+                      </div>
+                      {transaction.category && (
+                        <div className="text-[8px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded uppercase font-black tracking-widest border border-zinc-700/50">
+                          {transaction.category}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

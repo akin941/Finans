@@ -4,17 +4,24 @@ import { useState } from 'react';
 import { Plus, Minus } from 'lucide-react';
 
 export function QuickActionBar({ onAddIncome, onAddExpense }: {
-  onAddIncome: (amount: number, description?: string) => void;
-  onAddExpense: (amount: number, description?: string) => void;
+  onAddIncome: (amount: number, description?: string, category?: string) => void;
+  onAddExpense: (amount: number, description?: string, category?: string) => void;
 }) {
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
+  const [category, setCategory] = useState('Diğer');
+
+  const categories = [
+    'Market', 'Fatura', 'Kira', 'Yemek', 'Akaryakıt', 
+    'Ulaşım', 'Eğlence', 'Sağlık', 'Kişisel Bakım', 'Abonelik', 'Diğer'
+  ];
+
   const hasValue = amount && parseFloat(amount) > 0;
 
   const handleIncome = () => {
     const value = parseFloat(amount);
     if (value > 0) {
-      onAddIncome(value, description || undefined);
+      onAddIncome(value, description || undefined, category);
       setAmount('');
       setDescription('');
     }
@@ -23,7 +30,7 @@ export function QuickActionBar({ onAddIncome, onAddExpense }: {
   const handleExpense = () => {
     const value = parseFloat(amount);
     if (value > 0) {
-      onAddExpense(value, description || undefined);
+      onAddExpense(value, description || undefined, category);
       setAmount('');
       setDescription('');
     }
@@ -41,11 +48,29 @@ export function QuickActionBar({ onAddIncome, onAddExpense }: {
       />
       <input
         type="text"
-        placeholder="Açıklama ekle (opsiyonel)"
+        placeholder="Açıklama (opsiyonel)"
         value={description}
         onChange={(e) => setDescription(e.target.value)}
-        className="w-full bg-zinc-800 text-white placeholder-zinc-500 rounded-xl px-4 py-3 mb-4 text-sm outline-none focus:ring-2 focus:ring-emerald-600 transition-all"
+        className="w-full bg-zinc-800 text-white placeholder-zinc-500 rounded-xl px-4 py-3 mb-3 text-sm outline-none focus:ring-1 focus:ring-emerald-600 transition-all"
       />
+      
+      {/* Category Selection */}
+      <div className="flex gap-2 overflow-x-auto no-scrollbar mb-4 py-1">
+        {categories.map((cat) => (
+          <button
+            key={cat}
+            type="button"
+            onClick={() => setCategory(cat)}
+            className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
+              category === cat 
+                ? 'bg-emerald-600 text-white shadow-lg' 
+                : 'bg-zinc-800 text-zinc-500 hover:text-zinc-300'
+            }`}
+          >
+            {cat}
+          </button>
+        ))}
+      </div>
       <div className="grid grid-cols-2 gap-3">
         <button
           onClick={handleIncome}

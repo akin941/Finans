@@ -19,7 +19,15 @@ import { useState } from 'react';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, List } from 'lucide-react';
 import { Payment } from './UpcomingPayments';
 
-export function WeekCalendar({ payments = [] }: { payments?: Payment[] }) {
+export function WeekCalendar({ 
+  payments = [], 
+  selectedDate, 
+  onDateSelect 
+}: { 
+  payments?: Payment[],
+  selectedDate?: Date,
+  onDateSelect?: (date: Date) => void 
+}) {
   const [viewMode, setViewMode] = useState<'week' | 'month'>('week');
   const [currentDate, setCurrentDate] = useState(new Date());
 
@@ -40,6 +48,13 @@ export function WeekCalendar({ payments = [] }: { payments?: Payment[] }) {
     const dayPayments = payments.filter(p => format(p.dueDate, 'yyyy-MM-dd') === dayStr);
     if (dayPayments.length === 0) return null;
     return dayPayments.some(p => p.status === 'overdue') ? 'overdue' : 'pending';
+  };
+
+  const getDayTotal = (day: Date) => {
+    const dayStr = format(day, 'yyyy-MM-dd');
+    return payments
+      .filter(p => format(p.dueDate, 'yyyy-MM-dd') === dayStr)
+      .reduce((sum, p) => sum + p.amount, 0);
   };
 
   const nextMonth = () => setCurrentDate(addMonths(currentDate, 1));
@@ -92,28 +107,41 @@ export function WeekCalendar({ payments = [] }: { payments?: Payment[] }) {
           <div className="flex gap-2 w-full overflow-x-auto no-scrollbar pb-2">
             {weekDays.map((day, i) => {
               const isToday = isSameDay(day, today);
+              const isSelected = selectedDate && isSameDay(day, selectedDate);
               const dayStatus = getDayStatus(day);
+              const dayTotal = getDayTotal(day);
 
               return (
-                <div
+                <button
                   key={i}
-                  className={`flex-1 min-w-[55px] flex flex-col items-center px-3 py-3 rounded-2xl transition-all relative ${
-                    isToday ? 'bg-emerald-600 text-white shadow-lg scale-105 z-10' : 'bg-zinc-900 text-zinc-400 border border-zinc-800'
+                  onClick={() => onDateSelect?.(day)}
+                  className={`flex-1 min-w-[58px] flex flex-col items-center px-1 py-2.5 rounded-xl transition-all relative ${
+                    isToday 
+                      ? 'bg-emerald-600 text-white shadow-md scale-105 z-10' 
+                      : isSelected
+                        ? 'bg-zinc-100 text-black border-white shadow-lg'
+                        : 'bg-zinc-800 text-zinc-300 border border-zinc-700/50'
                   }`}
                 >
-                  <div className="text-[10px] uppercase tracking-widest font-bold opacity-70">
+                  <div className={`text-[9px] uppercase tracking-tighter font-black ${isSelected ? 'text-black/60' : 'opacity-60'}`}>
                     {format(day, 'EEE', { locale: tr })}
                   </div>
-                  <div className="text-lg font-black mt-1">
+                  <div className="text-base font-black mt-0.5">
                     {format(day, 'd')}
                   </div>
+                  {dayTotal > 0 && (
+                    <div className={`text-[8px] font-black mt-0.5 ${isToday ? 'text-white' : isSelected ? 'text-emerald-700' : 'text-emerald-500'}`}>
+                      ₺{dayTotal.toLocaleString()}
+                    </div>
+                  )}
                   {dayStatus && (
-                    <div className={`absolute bottom-2 w-1.5 h-1.5 rounded-full ${
+                    <div className={`absolute bottom-1 w-1 h-1 rounded-full ${
                       isToday ? 'bg-white' : 
+                      isSelected ? 'bg-emerald-600' :
                       dayStatus === 'overdue' ? 'bg-red-500 animate-pulse' : 'bg-orange-500 animate-pulse'
                     }`}></div>
                   )}
-                </div>
+                </button>
               );
             })}
           </div>
@@ -132,27 +160,37 @@ export function WeekCalendar({ payments = [] }: { payments?: Payment[] }) {
               {monthDays.map((day, i) => {
                 const isCurrentMonth = isSameMonth(day, currentDate);
                 const isToday = isTodayFn(day);
+                const isSelected = selectedDate && isSameDay(day, selectedDate);
                 const dayStatus = getDayStatus(day);
+                const dayTotal = getDayTotal(day);
 
                 return (
-                  <div
+                  <button
                     key={i}
+                    onClick={() => onDateSelect?.(day)}
                     className={`aspect-square flex flex-col items-center justify-center rounded-xl transition-all relative ${
                       isToday 
                         ? 'bg-emerald-600 text-white shadow-md' 
                         : isCurrentMonth 
-                          ? 'hover:bg-zinc-800 text-zinc-300' 
+                          ? isSelected
+                            ? 'bg-zinc-700 text-white shadow-inner'
+                            : 'hover:bg-zinc-800 text-zinc-300' 
                           : 'text-zinc-700 opacity-30'
                     }`}
                   >
                     <span className="text-sm font-bold">{format(day, 'd')}</span>
+                    {dayTotal > 0 && isCurrentMonth && (
+                      <div className={`text-[8px] font-black mt-0.5 leading-none ${isToday ? 'text-white' : 'text-emerald-500'}`}>
+                        ₺{dayTotal.toLocaleString()}
+                      </div>
+                    )}
                     {dayStatus && (
-                      <div className={`absolute bottom-1.5 w-1 h-1 rounded-full ${
+                      <div className={`absolute bottom-1 w-0.5 h-0.5 rounded-full ${
                         isToday ? 'bg-white' : 
                         dayStatus === 'overdue' ? 'bg-red-500' : 'bg-orange-500'
                       }`}></div>
                     )}
-                  </div>
+                  </button>
                 );
               })}
             </div>
