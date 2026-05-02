@@ -27,7 +27,13 @@ const CATEGORY_COLORS: { [key: string]: string } = {
 export function ProfessionalPieChart({ transactions }: { transactions: any[] }) {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
 
-  const expenseData = Object.entries(
+  type CategoryData = {
+    name: string;
+    value: number;
+    color: string;
+  };
+
+  const expenseData: CategoryData[] = Object.entries(
     transactions
       .filter(t => t.type === 'expense')
       .reduce((acc, t) => {
@@ -37,7 +43,7 @@ export function ProfessionalPieChart({ transactions }: { transactions: any[] }) 
       }, {} as { [key: string]: number })
   ).map(([name, value]) => ({
     name,
-    value,
+    value: Number(value),
     color: CATEGORY_COLORS[name] || CATEGORY_COLORS['Diğer']
   })).sort((a, b) => b.value - a.value);
 
