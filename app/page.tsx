@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
-import { addMonths, format, startOfMonth } from "date-fns";
+import { addMonths, format, startOfMonth, isSameDay } from "date-fns";
 import { tr } from "date-fns/locale";
 import { BalanceChart } from "@/components/BalanceChart";
 import { RecentTransactions, Transaction } from "@/components/RecentTransactions";
@@ -13,6 +13,8 @@ import { BottomNav, NavItem } from "@/components/BottomNav";
 import { WeekCalendar } from "@/components/WeekCalendar";
 import { ProfessionalPieChart } from "@/components/AnalyticsCharts";
 import { CheckCircle2, AlertCircle, X, CreditCard, ChevronRight, ArrowDownLeft, ArrowUpRight } from "lucide-react";
+import { VoiceInputModal } from "@/components/VoiceInputModal";
+import { useVoiceRecorder } from "@/hooks/useVoiceRecorder";
 
 const supabase = createClient(
   "https://cvymnyaqeupwdpknbqlo.supabase.co",
@@ -43,11 +45,19 @@ export default function Home() {
   const [drilldownCategory, setDrilldownCategory] = useState<string | null>(null);
   const [expenseTimeRange, setExpenseTimeRange] = useState<'month' | 'all'>('month');
   const [expenseSelectedDate, setExpenseSelectedDate] = useState<Date>(new Date());
+  
+  // Voice Input States
+  const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState<'idle' | 'recording' | 'processing'>('idle');
+  const [voiceResult, setVoiceResult] = useState<any>(null);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const { isRecording, startRecording, stopRecording, stopStream } = useVoiceRecorder();
 
   useEffect(() => {
     console.log("App mounted, loading data...");
     loadData();
-  }, []);
+    return () => stopStream(); // Cleanup mic on unmount
+  }, [stopStream]);
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
@@ -215,6 +225,53 @@ export default function Home() {
 
     showToast("İşlem başarıyla eklendi");
     loadData();
+  };
+
+  const handleVoiceConfirm = (data: { type: 'income' | 'expense', amount: number, category: string, description: string }) => {
+    handleAddTransaction(data.type, data.amount, data.description, data.category);
+    setIsVoiceModalOpen(false);
+  };
+
+  const toggleVoiceRecording = async () => {
+    if (voiceStatus === 'recording') {
+      stopRecording();
+      return;
+    }
+
+    if (voiceStatus === 'processing') return;
+
+    try {
+      setVoiceError(null);
+      setVoiceResult(null);
+      setVoiceStatus('recording');
+      
+      const recordingPromise = await startRecording();
+      const blob = await recordingPromise;
+      
+      setVoiceStatus('processing');
+      
+      const formData = new FormData();
+      formData.append('audio', blob);
+
+      const res = await fetch('/api/voice', {
+        method: 'POST',
+        body: formData
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Sesli işlem başarısız");
+
+      setVoiceResult(data);
+      setIsVoiceModalOpen(true);
+      setVoiceStatus('idle');
+    } catch (err: any) {
+      if (err.message !== "Kayıt iptal edildi.") {
+        setVoiceError(err.message);
+        setIsVoiceModalOpen(true);
+      }
+      setVoiceStatus('idle');
+      stopStream();
+    }
   };
 
   const handleAddDebt = async (debt: {
@@ -531,7 +588,13 @@ export default function Home() {
           <WeekCalendar 
             payments={payments} 
             selectedDate={selectedDate || undefined}
-            onDateSelect={setSelectedDate}
+            onDateSelect={(date) => {
+              if (selectedDate && isSameDay(selectedDate, date)) {
+                setSelectedDate(null);
+              } else {
+                setSelectedDate(date);
+              }
+            }}
           />
 
           {selectedDate && (
@@ -1008,7 +1071,24 @@ export default function Home() {
         </div>
       )}
 
-      <BottomNav active={activeTab} onNavigate={setActiveTab} />
+      <BottomNav 
+        active={activeTab} 
+        onNavigate={setActiveTab} 
+        onVoiceClick={toggleVoiceRecording}
+        voiceState={voiceStatus}
+      />
+
+      <VoiceInputModal 
+        isOpen={isVoiceModalOpen} 
+        onClose={() => {
+          setIsVoiceModalOpen(false);
+          setVoiceResult(null);
+          setVoiceError(null);
+        }}
+        onConfirm={handleVoiceConfirm}
+        initialData={voiceResult}
+        error={voiceError}
+      />
     </main>
   );
 }
